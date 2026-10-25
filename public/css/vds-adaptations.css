@@ -1,0 +1,618 @@
+/* ==========================================================================
+   VnExpress Design System (VDS) Adaptations & Semantic Token Overrides
+   Applied according to: https://vnexpress-design-system.vne-designops.workers.dev/llms.txt
+   ========================================================================== */
+
+/* 1. Root Tokens Mapping to Semantic VDS Tokens */
+:root {
+  /* Brand Accent */
+  --vne-red: var(--vds-text-accent-regular, #9f224e);
+  --vne-red-hover: var(--vds-color-accent-700, #b13460);
+  --vne-red-light: var(--vds-surface-accent, #fce6eb);
+  --vne-red-border: var(--vds-border-accent-subdued, #efacc1);
+
+  /* Primary Theme Accents */
+  --vne-dark-topbar: var(--vds-surface-000, #ffffff);
+  --vne-dark-header: var(--vds-text-regular, #202020);
+  --vne-dark-header-sub: var(--vds-text-regular-lighter, #5f5f5f);
+  --vne-dark-header-hover: var(--vds-color-neutral-800, #404040);
+
+  /* Semantic Status Colors */
+  --vne-green-accent: var(--vds-text-positive-regular, #1c7e38);
+  --vne-blue-accent: var(--vds-text-link-regular, #0471ae);
+  --vne-badge-live: var(--vds-text-negative-regular, #da1e28);
+
+  /* Semantic Text Colors */
+  --vne-text-main: var(--vds-text-regular, #202020);
+  --vne-text-secondary: var(--vds-text-regular-lighter, #5f5f5f);
+  --vne-text-muted: var(--vds-text-subdued, #7f7f7f);
+  --vne-text-subtle: var(--vds-text-subdued-lighter, #9f9f9f);
+
+  /* Semantic Borders & Dividers */
+  --vne-border: var(--vds-border-subdued, #00000026);
+  --vne-border-light: var(--vds-component-divider-fill-subdued, #0000000f);
+  --vne-border-dark: var(--vds-border-regular, #00000066);
+
+  /* Semantic Surfaces & Backgrounds */
+  --vne-bg-page: var(--vds-surface-100, #fafafa);
+  --vne-bg-card: var(--vds-surface-000, #ffffff);
+  --vne-bg-subtle: var(--vds-surface-200, #f3f3f3);
+  --vne-bg-active: var(--vds-surface-accent, #fce6eb);
+
+  /* Global Container */
+  --vne-max-width: 1130px;
+}
+
+/* 2. Dark Theme [data-theme="dark"] Auto-Adjustments */
+[data-theme="dark"] {
+  --vne-dark-topbar: var(--vds-surface-000, #0d1013);
+  --vne-dark-header: var(--vds-text-regular, #ffffffe0);
+  --vne-dark-header-sub: var(--vds-text-regular-lighter, #ffffffb2);
+  --vne-dark-header-hover: var(--vds-surface-200, #2c2f35);
+
+  --vne-bg-page: var(--vds-surface-000, #0d1013);
+  --vne-bg-card: var(--vds-surface-100, #20242a);
+  --vne-bg-subtle: var(--vds-surface-200, #2c2f35);
+  --vne-bg-active: var(--vds-surface-input-accent-selected, #b1346080);
+
+  --vne-border: var(--vds-border-subdued, #ffffff26);
+  --vne-border-light: var(--vds-component-divider-fill-subdued, #ffffff1a);
+}
+
+/* 3. Base Typography Rules */
+body {
+  font-family: 'Arial', sans-serif;
+  color: var(--vds-text-regular, #202020);
+  background-color: var(--vne-bg-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* UI Controls, Navigation, Labels: Merriweather Sans */
+button,
+input,
+select,
+.vne-nav-tabs,
+.vne-tab-btn,
+.vne-date-item-btn,
+.vne-sidebar-title,
+.vne-filter-name,
+.vne-view-switch-btn,
+.vne-subnav-item,
+.vne-team-name,
+.vne-breadcrumbs,
+.vne-news-meta,
+.vne-news-info,
+.vne-pagination,
+.vne-match-status-sub,
+.vne-standings-name,
+.vne-standings-season,
+.vds-theme-toggle {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', sans-serif !important;
+}
+
+/* Numeric Values: Roboto Mono (Chỉ dùng cho Tỉ số & Số liệu thống kê căn cột theo VDS) */
+.vne-score-box,
+.vne-subpage-score-box,
+.vne-rank-num,
+.vne-standings-pts,
+.vne-stat-val,
+.vds-numeric {
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Time & Status Metadata: Merriweather Sans (Chuẩn VDS Microcopy Meta) */
+.vne-match-item-time,
+.vne-match-status-sub,
+.vne-match-live-tag,
+#current-datetime-display,
+.vne-widget-match-time,
+.vne-subpage-time-primary,
+.vne-subpage-time-secondary {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.vne-match-time-status {
+  width: 82px !important;
+  min-width: 82px !important;
+  padding-right: 10px !important;
+  border-right: 1px solid var(--vds-border-subdued, #e2e8f0) !important;
+}
+
+.vne-match-item-time {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: var(--vds-text-regular, #202020) !important;
+  line-height: 1.35 !important;
+  white-space: nowrap !important;
+  letter-spacing: -0.2px !important;
+}
+
+.vne-match-status-sub {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: var(--vds-text-subdued, #64748b) !important;
+  line-height: 1.2 !important;
+  margin-top: 2px !important;
+  letter-spacing: 0.5px !important;
+}
+
+.vne-match-live-tag {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: var(--vds-text-negative-regular, #da1e28) !important;
+}
+
+#current-datetime-display {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  color: var(--vds-text-subdued-lighter, #666666) !important;
+}
+
+/* Dark theme for match time metadata */
+[data-theme="dark"] .vne-match-item-time {
+  color: var(--vds-text-regular, #e2e8f0) !important;
+}
+
+[data-theme="dark"] .vne-match-status-sub {
+  color: var(--vds-text-subdued-lighter, #94a3b8) !important;
+}
+
+[data-theme="dark"] #current-datetime-display {
+  color: var(--vds-text-subdued, #a0aec0) !important;
+}
+
+/* Article & News Headlines: Merriweather */
+.vne-news-heading,
+.vne-article-title,
+.vds-text-article-title {
+  font-family: var(--vds-typography-font-serif-100), 'Merriweather', serif !important;
+  color: var(--vds-text-article-title, #202020);
+  font-weight: 700;
+}
+
+/* Article Sapo & Paragraph: Arial */
+.vne-news-lead,
+.vne-article-sapo {
+  font-family: 'Arial', sans-serif !important;
+  color: var(--vds-text-article-lead, #5f5f5f);
+}
+
+/* Header & Logo styling */
+.vds-logo-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  line-height: 1;
+}
+
+.vds-header-logo {
+  height: 24px;
+  width: auto;
+  display: block;
+}
+
+.vne-header-wrapper {
+  background: var(--vds-surface-000, #ffffff);
+  border-bottom: 1px solid var(--vds-component-divider-fill-regular, #00000026);
+  box-shadow: var(--vds-shadow-elavation-B, 0 2px 4px rgba(0,0,0,0.04));
+}
+
+.vne-breadcrumbs {
+  font-size: 13px;
+  color: var(--vds-text-subdued);
+}
+
+.vne-breadcrumbs a {
+  color: var(--vds-text-regular-lighter);
+  text-decoration: none;
+}
+
+.vne-breadcrumbs a:hover {
+  color: var(--vds-text-accent-regular);
+}
+
+/* VDS Navigation Tabs */
+.vne-nav-tabs {
+  background-color: var(--vds-surface-100);
+  border-radius: var(--vds-radii-xl);
+  padding: 3px;
+  gap: 2px;
+}
+
+.vne-tab-btn {
+  border-radius: var(--vds-radii-lg);
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--vds-text-regular-lighter);
+  transition: all 0.2s ease;
+}
+
+.vne-tab-btn:hover {
+  color: var(--vds-text-regular);
+  background-color: var(--vds-surface-200);
+}
+
+.vne-tab-btn.active {
+  background-color: var(--vds-surface-000) !important;
+  color: var(--vds-text-accent-strong) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="dark"] .vne-tab-btn.active {
+  background-color: var(--vds-surface-200) !important;
+  color: var(--vds-text-accent-strong) !important;
+}
+
+/* Theme Toggle Button */
+.vds-theme-toggle {
+  background: transparent;
+  border: 1px solid var(--vds-border-subdued);
+  color: var(--vds-text-regular);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--vds-radii-circle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+  font-size: 14px;
+}
+
+.vds-theme-toggle:hover {
+  background: var(--vds-surface-200);
+  border-color: var(--vds-border-regular);
+}
+
+/* Flat Newspaper Layout: Clean 1px Dividers */
+.vne-card-box,
+.vne-league-group,
+.vne-standings-card,
+.vne-date-nav-bar,
+.vne-news-section {
+  background-color: var(--vne-bg-card);
+  border: 1px solid var(--vne-border);
+  box-shadow: none !important;
+}
+
+.vne-match-row {
+  border-bottom: 1px solid var(--vne-border-light);
+  transition: background-color 0.15s ease;
+}
+
+.vne-match-row:hover {
+  background-color: var(--vne-bg-subtle) !important;
+}
+
+/* Match Score Box - Strict No-Wrap & Adaptive Centering */
+.vne-match-teams-score {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+  gap: 10px !important;
+}
+
+.vne-score-box {
+  background-color: var(--vne-bg-subtle);
+  border-radius: var(--vds-radii-md);
+  color: var(--vds-text-regular);
+  letter-spacing: 0px !important;
+  white-space: nowrap !important;
+  width: auto !important;
+  min-width: 66px !important;
+  padding: 4px 10px !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  gap: 4px !important;
+  box-sizing: border-box !important;
+}
+
+.vne-score-box * {
+  white-space: nowrap !important;
+}
+
+.vne-score-box .vne-score-dash {
+  opacity: 0.55;
+  font-weight: 600;
+  margin: 0 1px;
+}
+
+.vne-score-box.live {
+  background-color: var(--vds-surface-negative) !important;
+  color: var(--vds-text-negative-regular) !important;
+}
+
+/* Subpage Score Box */
+.vne-subpage-score-box {
+  white-space: nowrap !important;
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 66px !important;
+  gap: 4px !important;
+  line-height: 1 !important;
+}
+
+.vne-subpage-score-box * {
+  white-space: nowrap !important;
+}
+
+@media (max-width: 768px) {
+  .vne-match-teams-score {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+    gap: 6px !important;
+  }
+  .vne-score-box {
+    min-width: 52px !important;
+    padding: 3px 6px !important;
+    font-size: 13.5px !important;
+    gap: 3px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .vne-match-teams-score {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+    gap: 4px !important;
+  }
+  .vne-score-box {
+    min-width: 44px !important;
+    padding: 2px 4px !important;
+    font-size: 12.5px !important;
+    gap: 2px !important;
+  }
+}
+
+/* Sidebar Titles with VDS Heading Style */
+.vne-sidebar-title {
+  color: var(--vds-text-accent-strong);
+  border-bottom: 2px solid var(--vds-text-accent-strong);
+}
+
+/* Selection Item Chip & Date Tabs */
+.vne-date-item-btn {
+  border-radius: var(--vds-radii-md);
+  color: var(--vds-text-regular-lighter);
+}
+
+.vne-date-item-btn:hover {
+  background-color: var(--vds-surface-200);
+  color: var(--vds-text-regular);
+}
+
+.vne-date-item-btn.active {
+  background-color: var(--vds-surface-accent) !important;
+  color: var(--vds-text-accent-strong) !important;
+  border: 1px solid var(--vds-border-accent-regular) !important;
+}
+
+[data-theme="dark"] .vne-date-item-btn.active {
+  background-color: var(--vds-surface-input-accent-selected) !important;
+  color: var(--vds-text-accent-strong) !important;
+}
+
+/* News Section styling conforming to VnExpress editorial style */
+.vne-news-card {
+  border-bottom: 1px solid var(--vne-border-light);
+  padding: var(--vds-spacing-sm) 0;
+  text-decoration: none;
+}
+
+.vne-news-card:hover .vne-news-heading {
+  color: var(--vds-text-accent-regular) !important;
+}
+
+.vne-news-thumb {
+  border-radius: var(--vds-radii-none) !important;
+}
+
+/* Standings Table mini */
+.vne-table-mini th {
+  background-color: var(--vne-bg-subtle);
+  color: var(--vds-text-subdued-lighter);
+  border-bottom: 1px solid var(--vne-border);
+}
+
+.vne-table-mini td {
+  border-bottom: 1px solid var(--vne-border-light);
+  color: var(--vds-text-regular);
+}
+
+.vne-rank-num.top-rank {
+  color: var(--vds-text-accent-strong);
+  font-weight: 700;
+}
+
+/* Action button with VDS button styles */
+.vne-btn-highlight {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', sans-serif;
+  border-radius: var(--vds-radii-md);
+  border: 1px solid var(--vds-border-subdued);
+  background: var(--vds-surface-000);
+  color: var(--vds-text-regular);
+  transition: all 0.15s ease;
+}
+
+.vne-btn-highlight:hover {
+  border-color: var(--vds-text-accent-regular);
+  color: var(--vds-text-accent-regular);
+  background: var(--vds-surface-accent);
+}
+
+/* League Banner & Sub-nav */
+.vne-league-banner {
+  background-color: var(--vne-bg-card);
+  border-bottom: 1px solid var(--vne-border);
+}
+
+.vne-league-subnav {
+  background-color: var(--vne-bg-card);
+  border-bottom: 1px solid var(--vne-border);
+}
+
+.vne-subnav-item.active {
+  color: var(--vds-text-accent-strong);
+  border-bottom: 3px solid var(--vds-text-accent-strong);
+}
+
+/* Footer adheres to neutral print styling */
+.vne-footer {
+  background-color: var(--vds-surface-100);
+  border-top: 1px solid var(--vds-border);
+  color: var(--vds-text-subdued);
+}
+
+.vne-footer-links a {
+  color: var(--vds-text-regular-lighter);
+}
+
+.vne-footer-links a:hover {
+  color: var(--vds-text-accent-regular);
+}
+
+/* Match Detail Specific VDS Refinements */
+.vne-md-score-pill {
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--vds-radii-md);
+  background-color: #274263 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .vne-md-score-pill {
+  background-color: var(--vds-surface-200) !important;
+  color: var(--vds-text-regular) !important;
+}
+
+.vne-md-team-name {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', sans-serif !important;
+  color: var(--vds-text-regular);
+}
+
+.vne-md-status-pill {
+  border-radius: var(--vds-radii-md);
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', sans-serif !important;
+}
+
+.vne-md-status-pill.live {
+  background-color: var(--vds-text-negative-regular, #da1e28) !important;
+}
+
+/* Match Detail Tabs Bar & Button Groups */
+.vne-md-tabs-bar {
+  background-color: var(--vds-surface-000, #ffffff) !important;
+  border-top: 1px solid var(--vds-border-subdued, #e2e8f0) !important;
+  border-bottom: 1px solid var(--vds-border-subdued, #e2e8f0) !important;
+  gap: 8px !important;
+  padding: 12px 16px !important;
+}
+
+.vne-md-tab-btn {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  border-radius: var(--vds-radii-md, 6px) !important;
+  border: 1px solid var(--vds-border-subdued, #cbd5e1) !important;
+  background-color: var(--vds-surface-000, #ffffff) !important;
+  color: var(--vds-text-regular, #334155) !important;
+  padding: 8px 18px !important;
+  text-decoration: none !important;
+  transition: all 0.15s ease-in-out !important;
+  line-height: 1.3 !important;
+}
+
+.vne-md-tab-btn:hover:not(.active) {
+  background-color: var(--vds-surface-input-accent-selected, #fdf2f4) !important;
+  border-color: var(--vds-border-accent-subdued, #efacc1) !important;
+  color: var(--vds-text-accent-regular, #9f224e) !important;
+}
+
+.vne-md-tab-btn.active {
+  background-color: var(--vds-interactive-accent-rest, #9f224e) !important;
+  border: 1px solid var(--vds-interactive-accent-rest, #9f224e) !important;
+  color: var(--vds-text-on-color-regular, #ffffff) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 4px rgba(159, 34, 78, 0.25) !important;
+}
+
+.vne-md-tab-btn.active:hover {
+  background-color: var(--vds-interactive-accent-hover, #7b163a) !important;
+  border-color: var(--vds-interactive-accent-hover, #7b163a) !important;
+  color: #ffffff !important;
+}
+
+/* Dark theme support for Match Detail tabs */
+[data-theme="dark"] .vne-md-tabs-bar {
+  background-color: var(--vds-surface-100, #181b20) !important;
+  border-top-color: var(--vds-border-subdued, #ffffff1a) !important;
+  border-bottom-color: var(--vds-border-subdued, #ffffff1a) !important;
+}
+
+[data-theme="dark"] .vne-md-tab-btn {
+  background-color: var(--vds-surface-200, #22262e) !important;
+  border-color: var(--vds-border-subdued, #ffffff26) !important;
+  color: var(--vds-text-regular, #cbd5e1) !important;
+}
+
+[data-theme="dark"] .vne-md-tab-btn:hover:not(.active) {
+  background-color: var(--vds-surface-300, #2d323c) !important;
+  border-color: var(--vds-border-accent-regular, #b13460) !important;
+  color: #f2c7d4 !important;
+}
+
+[data-theme="dark"] .vne-md-tab-btn.active {
+  background-color: var(--vds-interactive-accent-rest, #9f224e) !important;
+  border-color: var(--vds-interactive-accent-rest, #9f224e) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Mobile Roster Team Switcher */
+.vne-md-roster-tab {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', sans-serif !important;
+}
+
+.vne-md-roster-tab.active {
+  background-color: var(--vds-interactive-accent-rest, #9f224e) !important;
+  border-color: var(--vds-interactive-accent-rest, #9f224e) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 4px rgba(159, 34, 78, 0.25) !important;
+}
+
+.vne-md-stat-bar-fill.home {
+  background-color: var(--vds-interactive-accent-rest, #9f224e) !important;
+}
+
+/* Stats Comparison Bar */
+.vne-md-stat-val {
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.vne-md-stat-name {
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', sans-serif !important;
+  color: var(--vds-text-regular);
+}
+
+.vne-md-scoreboard-card {
+  background-color: var(--vne-bg-card);
+  border: 1px solid var(--vne-border);
+  box-shadow: none !important;
+}
+
+.vne-md-tabs-wrapper {
+  background-color: var(--vne-bg-card);
+  border: 1px solid var(--vne-border);
+}
+
