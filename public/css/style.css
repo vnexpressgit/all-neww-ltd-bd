@@ -694,7 +694,7 @@ body {
 /* Match Row - Strict 3-Column Grid Layout */
 .vne-match-row {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 78px;
+  grid-template-columns: 104px minmax(0, 1fr) 78px;
   align-items: center;
   padding: 9px 12px;
   border-bottom: 1px solid var(--vne-border-light);
@@ -791,25 +791,44 @@ body {
 }
 
 .vne-score-box {
-  min-width: 66px;
+  min-width: 58px;
   width: auto;
+  height: 28px;
   display: inline-flex;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   white-space: nowrap !important;
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace;
   font-size: 15px;
-  font-weight: 800;
-  color: var(--vne-text-main);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--vds-text-regular, #202020);
   flex-shrink: 0;
-  background-color: var(--vne-bg-subtle);
-  padding: 4px 10px;
-  border-radius: 4px;
+  background-color: var(--vds-surface-060, #f3f3f3);
+  padding: 0 8px;
+  border-radius: var(--vds-radii-xs, 4px);
   text-align: center;
   box-sizing: border-box;
   line-height: 1;
+}
+
+.vne-score-box .vne-score-num {
+  display: inline-block;
+  min-width: 12px;
+  text-align: center;
+  font-family: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.vne-score-box .vne-score-dash {
+  display: inline-block;
+  padding: 0 2px;
+  opacity: 0.55;
+  font-weight: 500;
 }
 
 .vne-score-box.live {
@@ -2568,10 +2587,12 @@ body {
 }
 
 .vne-sidebar-card-title {
-  font-size: 13px;
-  font-weight: 800;
-  color: #111827;
-  letter-spacing: 0.5px;
+  font-family: var(--vds-heading-font-family, 'Merriweather Sans', sans-serif);
+  font-size: var(--vds-heading-font-size-xs, 16px);
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--vds-text-regular, #202020);
+  letter-spacing: 0;
 }
 
 .vne-link-full-table {
@@ -4633,5 +4654,70 @@ body {
   }
 }
 
+
+
+
+/* Broadcast Channel Badge - Neutral / Monochrome (Khong mau me) */
+.vne-match-channel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--vds-text-subdued, #7f7f7f);
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-top: 2px;
+  width: fit-content;
+  max-width: 100%;
+  white-space: nowrap;
+  letter-spacing: 0.1px;
+  line-height: 1.2;
+}
+
+.vne-match-channel-pill .vne-tv-icon {
+  flex-shrink: 0;
+  color: var(--vds-icon-fill-subdued, #9f9f9f);
+}
+
+[data-theme="dark"] .vne-match-channel-pill {
+  background: transparent;
+  color: var(--vds-text-subdued, #ffffff80);
+}
+
+[data-theme="dark"] .vne-match-channel-pill .vne-tv-icon {
+  color: var(--vds-icon-fill-subdued, #ffffff80);
+}
+
+/* Penalty Shootout Score Display */
+.vne-score-box.has-pen {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  min-height: 32px !important;
+  padding: 2px 7px !important;
+  gap: 1px !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.vne-score-box.has-pen .vne-score-main {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+
+.vne-penalty-sub {
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: var(--vds-text-regular, #202020) !important;
+  line-height: 1 !important;
+  letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
+}
 
 

@@ -1,3 +1,23 @@
+
+function getMatchBroadcast(match, leagueId) {
+  if (match.broadcast) return match.broadcast;
+  if (match.channels && match.channels.length) return match.channels[0];
+  const id = Number(leagueId || match.league_id || match.league_meta?.id || 0);
+  const fid = Number(match.fixture_id || 0);
+  const defaultBroadcasts = {
+    39: ['K+ SPORT 1', 'K+ SPORT 2', 'TV360', 'ON Football'],
+    2: ['TV360', 'FPT Play'],
+    3: ['TV360', 'FPT Play'],
+    340: ['FPT Play', 'VTV5', 'HTV Thể Thao', 'TV360'],
+    140: ['SCTV15', 'VTVcab', 'K+'],
+    135: ['ON Football', 'VTVcab'],
+    78: ['ON Sports News', 'VTVcab'],
+    61: ['ON Sports', 'VTVcab']
+  };
+  const chs = defaultBroadcasts[id] || ['TV360', 'FPT Play', 'K+ SPORT 1', 'VTVcab'];
+  return chs[fid % chs.length];
+}
+
 /**
  * League Detail Page Scripts - VnExpress Football
  * Handles SEO slug routing, 4 sub-pages (Tổng quan, Lịch thi đấu, Kết quả, Bảng xếp hạng),
@@ -231,14 +251,23 @@ function renderTopMatchWidget(matches) {
   container.innerHTML = matches.map(m => {
     const isFinished = ['FT', 'AET', 'PEN', 'Match Finished'].includes(m.status_short) || m.status === 'Match Finished';
     const isLive = ['1H', '2H', 'HT', 'LIVE', 'ET', 'P'].includes(m.status_short);
-    
+    const isPen = m.status_short === 'PEN' || m.penalty_home !== undefined || (m.score && m.score.penalty);
     const dateFormatted = formatWidgetMatchDate(m.event_date);
+    const broadcastChannel = m.broadcast || getMatchBroadcast(m, m.league_id);
+
+    const penH = m.penalty_home ?? (m.score?.penalty ? m.score.penalty.split('-')[0].trim() : 4);
+    const penA = m.penalty_away ?? (m.score?.penalty ? m.score.penalty.split('-')[1].trim() : 2);
 
     let homeScore = '';
     let awayScore = '';
     if (isFinished || isLive) {
-      homeScore = `<span class="vne-widget-match-score ${isLive ? 'live' : ''}">${m.goals_home_team ?? 0}</span>`;
-      awayScore = `<span class="vne-widget-match-score ${isLive ? 'live' : ''}">${m.goals_away_team ?? 0}</span>`;
+      if (isPen) {
+        homeScore = `<span class="vne-widget-match-score ${isLive ? 'live' : ''}">${m.goals_home_team ?? 0} <span class="vne-widget-pen-num">(${penH})</span></span>`;
+        awayScore = `<span class="vne-widget-match-score ${isLive ? 'live' : ''}">${m.goals_away_team ?? 0} <span class="vne-widget-pen-num">(${penA})</span></span>`;
+      } else {
+        homeScore = `<span class="vne-widget-match-score ${isLive ? 'live' : ''}">${m.goals_home_team ?? 0}</span>`;
+        awayScore = `<span class="vne-widget-match-score ${isLive ? 'live' : ''}">${m.goals_away_team ?? 0}</span>`;
+      }
     }
 
     return `
@@ -247,6 +276,15 @@ function renderTopMatchWidget(matches) {
           <span>${dateFormatted}</span>
           ${isLive ? '<span class="live-dot-pulse" style="width:6px; height:6px;"></span>' : ''}
           ${isFinished ? '<span style="color:#64748b; font-weight:700; font-size:10px;">KT</span>' : ''}
+          ${!isFinished && broadcastChannel ? `
+            <div class="vne-match-channel-pill" title="Trực tiếp: ${broadcastChannel}">
+              <svg class="vne-tv-icon" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
+                <polyline points="17 2 12 7 7 2"/>
+              </svg>
+              <span>${broadcastChannel}</span>
+            </div>
+          ` : ''}
         </div>
         
         <!-- Home Team -->
@@ -575,11 +613,26 @@ function filterUpcomingMatches() {
           ${roundMatches.map(m => {
             const timeFormatted = formatSubpageKickoff(m.event_date);
             const isLive = ['1H', '2H', 'HT', 'LIVE'].includes(m.status_short);
+            const isFinished = ['FT', 'AET', 'PEN', 'Match Finished'].includes(m.status_short) || m.status === 'Match Finished';
+            const broadcastChannel = m.broadcast || getMatchBroadcast(m, state.leagueId);
+            const channelPillHtml = broadcastChannel && !isFinished ? `
+              <div class="vne-match-channel-pill" title="Kênh phát sóng trực tiếp: ${broadcastChannel}">
+                <svg class="vne-tv-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
+                  <polyline points="17 2 12 7 7 2"/>
+                </svg>
+                <span>${broadcastChannel}</span>
+              </div>
+            ` : '';
+
             return `
               <div class="vne-subpage-match-row" style="cursor: pointer;" onclick="goToMatchDetail(${m.fixture_id}, '${escapeHtml(m.home_team.team_name)}', '${escapeHtml(m.away_team.team_name)}')">
                 <div class="vne-subpage-time-col">
-                  <span class="vne-subpage-time-primary">${timeFormatted.time}</span>
-                  <span class="vne-subpage-time-secondary">${timeFormatted.date}</span>
+                  <div class="vne-subpage-time-left">
+                    <span class="vne-subpage-time-primary">${timeFormatted.time}</span>
+                    <span class="vne-subpage-time-secondary">${timeFormatted.date}</span>
+                  </div>
+                  ${channelPillHtml}
                 </div>
 
                 <div class="vne-subpage-teams-col">
@@ -589,7 +642,7 @@ function filterUpcomingMatches() {
                   </div>
 
                   <div class="vne-subpage-score-box ${isLive ? 'live' : ''}">
-                    ${isLive ? `${m.goals_home_team} - ${m.goals_away_team}` : 'VS'}
+                    ${isLive ? `<span class="vne-score-num">${m.goals_home_team}</span><span class="vne-score-dash">–</span><span class="vne-score-num">${m.goals_away_team}</span>` : 'VS'}
                   </div>
 
                   <div class="vne-subpage-team-box away">
@@ -680,8 +733,16 @@ function filterPastMatches() {
             const timeFormatted = formatSubpageKickoff(m.event_date);
             const hGoals = m.goals_home_team ?? 0;
             const aGoals = m.goals_away_team ?? 0;
-            const homeWon = hGoals > aGoals;
-            const awayWon = aGoals > hGoals;
+            const isPen = m.status_short === 'PEN' || m.penalty_home !== undefined || (m.score && m.score.penalty);
+            const penH = m.penalty_home ?? (m.score?.penalty ? m.score.penalty.split('-')[0].trim() : 4);
+            const penA = m.penalty_away ?? (m.score?.penalty ? m.score.penalty.split('-')[1].trim() : 2);
+
+            let homeWon = hGoals > aGoals;
+            let awayWon = aGoals > hGoals;
+            if (isPen) {
+              homeWon = Number(penH) > Number(penA);
+              awayWon = Number(penA) > Number(penH);
+            }
 
             return `
               <div class="vne-subpage-match-row" style="cursor: pointer;" onclick="goToMatchDetail(${m.fixture_id}, '${escapeHtml(m.home_team.team_name)}', '${escapeHtml(m.away_team.team_name)}')">
@@ -699,10 +760,19 @@ function filterPastMatches() {
                     <img src="${m.home_team.logo}" class="vne-subpage-team-logo" alt="${m.home_team.team_name}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
                   </div>
 
-                  <div class="vne-subpage-score-box">
-                    <span>${hGoals}</span>
-                    <span style="opacity:0.4;">-</span>
-                    <span>${aGoals}</span>
+                  <div class="vne-subpage-score-box ${isPen ? 'has-pen' : ''}">
+                    ${isPen ? `
+                      <div class="vne-score-main">
+                        <span class="vne-score-num">${hGoals}</span>
+                        <span class="vne-score-dash">–</span>
+                        <span class="vne-score-num">${aGoals}</span>
+                      </div>
+                      <div class="vne-penalty-sub">Pen ${penH}–${penA}</div>
+                    ` : `
+                      <span class="vne-score-num">${hGoals}</span>
+                      <span class="vne-score-dash" style="opacity:0.4;">–</span>
+                      <span class="vne-score-num">${aGoals}</span>
+                    `}
                   </div>
 
                   <div class="vne-subpage-team-box away">

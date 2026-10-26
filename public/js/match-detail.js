@@ -366,7 +366,27 @@ function renderMatchHeader(match) {
   if (!match) return;
 
   const topbar = document.getElementById('md-header-date-bar');
-  if (topbar) topbar.innerText = match.headerDateText || 'Thứ tư 21/10/2026, 02:00 - Lượt 3';
+  const isFinished = match.isFinished || match.statusBadge === 'Kết thúc' || match.status_short === 'FT' || match.status_short === 'PEN';
+  const broadcastChannel = match.broadcast;
+
+  if (topbar) {
+    if (!isFinished && broadcastChannel) {
+      topbar.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <span>${match.headerDateText || 'Thứ sáu 16/10/2026, 02:00 - Lượt 3'}</span>
+          <div class="vne-match-channel-pill" title="Kênh phát sóng trực tiếp: ${broadcastChannel}" style="color: #cbd5e1; margin-top: 0; font-size: 11px;">
+            <svg class="vne-tv-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
+              <polyline points="17 2 12 7 7 2"/>
+            </svg>
+            <span>Trực tiếp: ${broadcastChannel}</span>
+          </div>
+        </div>
+      `;
+    } else {
+      topbar.innerText = match.headerDateText || 'Thứ tư 21/10/2026, 02:00 - Lượt 3';
+    }
+  }
 
   const wmHome = document.getElementById('md-watermark-home');
   const wmAway = document.getElementById('md-watermark-away');
@@ -388,10 +408,30 @@ function renderMatchHeader(match) {
   if (awayName) awayName.innerText = match.away_team.team_name;
   if (awayLogo) awayLogo.src = match.away_team.logo;
 
-  const homeScore = document.getElementById('md-home-score');
-  const awayScore = document.getElementById('md-away-score');
-  if (homeScore) homeScore.innerText = match.homeScore ?? 0;
-  if (awayScore) awayScore.innerText = match.awayScore ?? 0;
+  const isPen = match.isPen || !!match.penaltyScore || !!match.penalties || (match.penalty_home !== undefined);
+  const scorePill = document.getElementById('md-score-pill');
+  if (scorePill) {
+    if (isPen) {
+      const penH = match.penalty_home ?? (match.penaltyScore ? match.penaltyScore.split('-')[0].trim() : 4);
+      const penA = match.penalty_away ?? (match.penaltyScore ? match.penaltyScore.split('-')[1].trim() : 2);
+      scorePill.classList.add('has-pen');
+      scorePill.innerHTML = `
+        <div class="vne-md-score-main">
+          <span id="md-home-score">${match.homeScore ?? 0}</span>
+          <span class="vne-md-score-dash">–</span>
+          <span id="md-away-score">${match.awayScore ?? 0}</span>
+        </div>
+        <div class="vne-md-penalty-sub">Pen ${penH}–${penA}</div>
+      `;
+    } else {
+      scorePill.classList.remove('has-pen');
+      scorePill.innerHTML = `
+        <span id="md-home-score">${match.homeScore ?? 0}</span>
+        <span class="vne-md-score-dash">–</span>
+        <span id="md-away-score">${match.awayScore ?? 0}</span>
+      `;
+    }
+  }
 
   const htText = document.getElementById('md-halftime-text');
   if (htText) htText.innerText = match.halftimeText || 'Hiệp một: 0 - 0';
@@ -438,10 +478,21 @@ function renderTimelineTab(match, events) {
   if (!container) return;
 
   const list = events || [];
-  container.innerHTML = list.map((ev, idx) => {
+  const eventsHtml = list.map((ev, idx) => {
     const isFirst = idx === 0;
     const isLast = idx === list.length - 1;
     const isHome = ev.side === 'home';
+
+    if (ev.type === 'whistle' || ev.type === 'penalty_shootout') {
+      return `
+        <div class="vne-md-tl-milestone-row">
+          <div class="vne-md-tl-milestone-badge">
+            <span class="vne-md-tl-milestone-min">${ev.minute}'</span>
+            <span class="vne-md-tl-milestone-text">${ev.player || ev.text || 'Kết thúc trận đấu'}</span>
+          </div>
+        </div>
+      `;
+    }
 
     const renderEventDetail = (e, side) => {
       if (e.type === 'goal') {
@@ -493,6 +544,60 @@ function renderTimelineTab(match, events) {
       </div>
     `;
   }).join('');
+
+  let shootoutHtml = '';
+  if (match.penalties && match.penalties.length > 0) {
+    const penH = match.penalty_home ?? (match.penaltyScore ? match.penaltyScore.split('-')[0].trim() : 4);
+    const penA = match.penalty_away ?? (match.penaltyScore ? match.penaltyScore.split('-')[1].trim() : 2);
+    const winnerName = Number(penH) > Number(penA) ? match.home_team.team_name : match.away_team.team_name;
+
+    shootoutHtml = `
+      <div class="vne-md-shootout-card">
+        <div class="vne-md-shootout-header">
+          <div class="vne-md-shootout-title">LOẠT SÚT LUÂN LƯU 11M</div>
+          <div class="vne-md-shootout-score">Tỷ số Pen: <strong>${penH} – ${penA}</strong></div>
+        </div>
+        <div class="vne-md-shootout-list">
+          ${match.penalties.map(p => {
+            const isHome = p.team === 'home';
+            return `
+              <div class="vne-md-shootout-row ${p.team}">
+                <div class="vne-md-shootout-side home">
+                  ${isHome ? `
+                    <div class="vne-md-shootout-player">
+                      <span class="vne-md-shootout-name">${p.player}</span>
+                      <span class="vne-md-shootout-tag ${p.scored ? 'scored' : 'missed'}">
+                        ${p.scored ? 'VÀO' : 'HỎNG'}
+                      </span>
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="vne-md-shootout-order">
+                  <span class="vne-shootout-dot ${p.scored ? 'scored' : 'missed'}">${p.scored ? '✓' : '✕'}</span>
+                  <span>#${p.order}</span>
+                </div>
+                <div class="vne-md-shootout-side away">
+                  ${!isHome ? `
+                    <div class="vne-md-shootout-player">
+                      <span class="vne-md-shootout-tag ${p.scored ? 'scored' : 'missed'}">
+                        ${p.scored ? 'VÀO' : 'HỎNG'}
+                      </span>
+                      <span class="vne-md-shootout-name">${p.player}</span>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="vne-md-shootout-summary">
+          <span>🏆 <strong>${winnerName}</strong> giành chiến thắng <strong>${penH} - ${penA}</strong> ở loạt sút luân lưu 11m</span>
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = eventsHtml + shootoutHtml;
 }
 
 // =========================================================================

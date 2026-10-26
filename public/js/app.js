@@ -1,3 +1,23 @@
+
+function getMatchBroadcast(match, leagueId) {
+  if (match.broadcast) return match.broadcast;
+  if (match.channels && match.channels.length) return match.channels[0];
+  const id = Number(leagueId || match.league_id || match.league_meta?.id || 0);
+  const fid = Number(match.fixture_id || 0);
+  const defaultBroadcasts = {
+    39: ['K+ SPORT 1', 'K+ SPORT 2', 'TV360', 'ON Football'],
+    2: ['TV360', 'FPT Play'],
+    3: ['TV360', 'FPT Play'],
+    340: ['FPT Play', 'VTV5', 'HTV Thể Thao', 'TV360'],
+    140: ['SCTV15', 'VTVcab', 'K+'],
+    135: ['ON Football', 'VTVcab'],
+    78: ['ON Sports News', 'VTVcab'],
+    61: ['ON Sports', 'VTVcab']
+  };
+  const chs = defaultBroadcasts[id] || ['TV360', 'FPT Play', 'K+ SPORT 1', 'VTVcab'];
+  return chs[fid % chs.length];
+}
+
 const TODAY_DATE = '2026-10-16';
 
 // Standard VDS Date & Time Formatters (Follows https://vnexpress-design-system.vne-designops.workers.dev/content/time/)
@@ -579,21 +599,31 @@ function renderTimelineView(grouped) {
     const matchRows = group.matches.map(m => {
       const isFinished = ['FT', 'AET', 'PEN', 'Match Finished'].includes(m.status_short) || m.status === 'Match Finished';
       const isLive = ['1H', '2H', 'HT', 'LIVE', 'ET', 'P'].includes(m.status_short);
+      const isPen = m.status_short === 'PEN' || m.penalty_home !== undefined || (m.score && m.score.penalty);
       const matchTimeStr = formatMatchItemTime(m.event_date);
       const fullDateTime = formatTemplateDateTime(m.event_date);
+      const broadcastChannel = m.broadcast || getMatchBroadcast(m, league.id);
 
-      // Time or Status text:
-      // - Chỉ show thời gian là dạng ngày/tháng, giờ:phút bắt đầu của trận đấu.
-      // - Trạng thái 'FT • HẾT GIỜ' đổi thành 'KT'
-      // - Bỏ 'SẮP DIỄN RA' tại tất cả các item các trận đấu
+      const channelPillHtml = `
+        <div class="vne-match-channel-pill" title="Kênh phát sóng trực tiếp: ${broadcastChannel}">
+          <svg class="vne-tv-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
+            <polyline points="17 2 12 7 7 2"/>
+          </svg>
+          <span>${broadcastChannel}</span>
+        </div>
+      `;
+
+      // Time & Status Column
       let timeStatusHtml = '';
       if (isLive) {
         timeStatusHtml = `
           <span class="vne-match-item-time" title="${fullDateTime}">${matchTimeStr}</span>
           <div class="vne-match-live-tag">
             <span class="live-dot-pulse"></span>
-            <span>${m.elapsed || 'Đang đá'}' TRỰC TIẾP</span>
+            <span>${m.elapsed || 'Đang đá'}' LIVE</span>
           </div>
+          ${channelPillHtml}
         `;
       } else if (isFinished) {
         timeStatusHtml = `
@@ -603,20 +633,31 @@ function renderTimelineView(grouped) {
       } else {
         timeStatusHtml = `
           <span class="vne-match-item-time" title="${fullDateTime}">${matchTimeStr}</span>
+          ${channelPillHtml}
         `;
       }
 
-      // Score / Time display (Strict single-line no wrap)
+      // Score display (with Penalty shootout support)
       let scoreHtml = '';
       if (isLive) {
-        scoreHtml = `<div class="vne-score-box live"><span>${m.goals_home_team ?? 0}</span><span class="vne-score-dash">-</span><span>${m.goals_away_team ?? 0}</span></div>`;
+        scoreHtml = `<div class="vne-score-box live"><span class="vne-score-num">${m.goals_home_team ?? 0}</span><span class="vne-score-dash">–</span><span class="vne-score-num">${m.goals_away_team ?? 0}</span></div>`;
+      } else if (isPen) {
+        const penHome = m.penalty_home ?? (m.score?.penalty ? m.score.penalty.split('-')[0].trim() : 4);
+        const penAway = m.penalty_away ?? (m.score?.penalty ? m.score.penalty.split('-')[1].trim() : 2);
+        scoreHtml = `
+          <div class="vne-score-box has-pen" title="Hòa 120 phút: ${m.goals_home_team ?? 1}-${m.goals_away_team ?? 1} | Luân lưu: ${penHome}-${penAway}">
+            <div class="vne-score-main">
+              <span class="vne-score-num">${m.goals_home_team ?? 1}</span><span class="vne-score-dash">–</span><span class="vne-score-num">${m.goals_away_team ?? 1}</span>
+            </div>
+            <div class="vne-penalty-sub">Pen ${penHome}–${penAway}</div>
+          </div>
+        `;
       } else if (isFinished) {
-        scoreHtml = `<div class="vne-score-box"><span>${m.goals_home_team ?? 0}</span><span class="vne-score-dash">-</span><span>${m.goals_away_team ?? 0}</span></div>`;
+        scoreHtml = `<div class="vne-score-box"><span class="vne-score-num">${m.goals_home_team ?? 0}</span><span class="vne-score-dash">–</span><span class="vne-score-num">${m.goals_away_team ?? 0}</span></div>`;
       } else {
         scoreHtml = `<div class="vne-score-box upcoming"><span>vs</span></div>`;
       }
 
-      // Action button (Highlight / Chi tiết) -> Navigates to Match Detail page
       const actionHtml = isFinished ? `
         <button class="vne-btn-highlight" onclick="goToMatchDetail(${m.fixture_id}, '${escapeHtml(m.home_team.team_name)}', '${escapeHtml(m.away_team.team_name)}', event)">
           <i data-lucide="video" style="width: 12px; height: 12px;"></i>
@@ -814,7 +855,7 @@ async function loadStandings() {
 
     const leagues = state.config?.leagues || [];
     const availableLeagueIds = Object.keys(state.standingsMap).map(Number);
-    document.getElementById('standings-count-badge').innerText = `${availableLeagueIds.length} giải đấu`;
+    const countBadge = document.getElementById('standings-count-badge'); if (countBadge) countBadge.remove();
 
     container.innerHTML = availableLeagueIds.map(id => {
       const l = leagues.find(x => x.id === id) || { vnName: 'Giải đấu', name: 'League' };

@@ -117,20 +117,21 @@ async function getLeagueFixtures(leagueId) {
     const json = await res.json();
     let data = json?.data?.[leagueId]?.data || [];
 
-    // Ensure showcase match PSG vs Barca (fixture_id: 1001) is available in Champions League (id: 2)
+    // Ensure showcase matches (PSG vs Barca 1001 & Arsenal vs Porto 1002 with Penalty) in Champions League (id: 2)
     if (parseInt(leagueId) === 2 && !data.some(m => m.fixture_id === 1001)) {
       data = [
         {
           fixture_id: 1001,
           league_id: 2,
           event_date: '2026-10-16T02:00:00+07:00',
-          display_header_date: 'Thứ tư 21/10/2026, 02:00 - Lượt 3',
+          display_header_date: 'Thứ sáu 16/10/2026, 02:00 - Lượt 3',
           event_timestamp: Math.floor(Date.now() / 1000) - 7200,
           round: 'Lượt 3',
           status: 'Match Finished',
           status_short: 'FT',
           goals_home_team: 4,
           goals_away_team: 2,
+          broadcast: 'TV360',
           score: { halftime: '1 - 0', fulltime: '4 - 2' },
           league: {
             name: 'UEFA Champions League',
@@ -146,6 +147,37 @@ async function getLeagueFixtures(leagueId) {
             team_id: 529,
             team_name: 'Barca',
             logo: 'https://is.vnecdn.net/objects/teams/529.png?v=1'
+          }
+        },
+        {
+          fixture_id: 1002,
+          league_id: 2,
+          event_date: '2026-10-16T02:00:00+07:00',
+          display_header_date: 'Thứ sáu 16/10/2026, 02:00 - Vòng 1/8',
+          event_timestamp: Math.floor(Date.now() / 1000) - 7200,
+          round: 'Vòng 1/8',
+          status: 'Match Finished',
+          status_short: 'PEN',
+          goals_home_team: 1,
+          goals_away_team: 1,
+          penalty_home: 4,
+          penalty_away: 2,
+          broadcast: 'FPT Play',
+          score: { halftime: '1 - 0', fulltime: '1 - 1', extra_time: '1 - 1', penalty: '4 - 2' },
+          league: {
+            name: 'UEFA Champions League',
+            country: 'Châu Âu',
+            logo: 'https://is.vnecdn.net/objects/leagues/2.png?v=1'
+          },
+          home_team: {
+            team_id: 42,
+            team_name: 'Arsenal',
+            logo: 'https://is.vnecdn.net/objects/teams/42.png?v=1'
+          },
+          away_team: {
+            team_id: 50,
+            team_name: 'Porto',
+            logo: 'https://is.vnecdn.net/objects/teams/50.png?v=1'
           }
         },
         ...data
@@ -402,17 +434,15 @@ app.get('/api/league-detail', async (req, res) => {
   // 1. Full Upcoming Matches (Lịch thi đấu: hôm nay đi về tương lai)
   // Sorted chronologically (kickoff earliest to latest)
   const upcomingMatches = sortedFixtures.filter(m => {
-    const mDate = m.event_date ? m.event_date.split('T')[0] : '';
     const isFinished = ['FT', 'AET', 'PEN', 'Match Finished'].includes(m.status_short) || m.status === 'Match Finished';
-    return mDate >= today || !isFinished;
+    return !isFinished;
   }).sort((a, b) => (a.event_timestamp || 0) - (b.event_timestamp || 0));
 
   // 2. Full Past Results (Kết quả: hôm nay trở về quá khứ)
   // Sorted reverse-chronological (most recent finished first)
   const pastMatches = sortedFixtures.filter(m => {
-    const mDate = m.event_date ? m.event_date.split('T')[0] : '';
     const isFinished = ['FT', 'AET', 'PEN', 'Match Finished'].includes(m.status_short) || m.status === 'Match Finished';
-    return isFinished || mDate <= today;
+    return isFinished;
   }).sort((a, b) => (b.event_timestamp || 0) - (a.event_timestamp || 0));
 
   // 3. Full Detailed Standings (Bảng xếp hạng đầy đủ với nhiều cột thông số)
@@ -525,10 +555,24 @@ app.get('/api/fixtures', async (req, res) => {
 
   for (const l of targetLeagues) {
     const fixtures = await getLeagueFixtures(l.id);
+        const defaultBroadcasts = {
+      39: ['K+ SPORT 1', 'K+ SPORT 2', 'TV360', 'ON Football'],
+      2: ['TV360', 'FPT Play'],
+      3: ['TV360', 'FPT Play'],
+      340: ['FPT Play', 'VTV5', 'HTV Thể Thao', 'TV360'],
+      140: ['SCTV15', 'VTVcab', 'K+'],
+      135: ['ON Football', 'VTVcab'],
+      78: ['ON Sports News', 'VTVcab'],
+      61: ['ON Sports', 'VTVcab']
+    };
+    const chList = defaultBroadcasts[l.id] || ['TV360', 'FPT Play', 'K+ SPORT 1', 'VTVcab'];
+
     for (const m of fixtures) {
-      // Enrich with league metadata
+      const broadcastChannel = m.broadcast || chList[(m.fixture_id || 0) % chList.length];
+      // Enrich with broadcast channel and league metadata
       allMatches.push({
         ...m,
+        broadcast: broadcastChannel,
         league_meta: {
           id: l.id,
           slug: l.slug,
@@ -1077,6 +1121,82 @@ app.get('/api/match-detail', async (req, res) => {
         away_team: aTeam
       };
     }
+  }
+
+  // 1. Showcase Match 1002: Arsenal 1 - 1 Porto (Pen 4 - 2)
+  if (targetId === 1002 || (slugLower.includes('arsenal') && slugLower.includes('porto'))) {
+    const uclLeague = LEAGUES.find(l => l.id === 2) || LEAGUES[1];
+    return res.json({
+      match: {
+        fixture_id: 1002,
+        slug: 'arsenal-vs-porto-1002',
+        headerDateText: 'Thứ sáu 16/10/2026, 02:00 - Vòng 1/8',
+        statusBadge: 'Kết thúc',
+        isLive: false,
+        isFinished: true,
+        isPen: true,
+        broadcast: 'FPT Play',
+        home_team: {
+          team_id: 42,
+          team_name: 'Arsenal',
+          logo: 'https://is.vnecdn.net/objects/teams/42.png?v=1'
+        },
+        away_team: {
+          team_id: 50,
+          team_name: 'Porto',
+          logo: 'https://is.vnecdn.net/objects/teams/50.png?v=1'
+        },
+        homeScore: 1,
+        awayScore: 1,
+        penaltyScore: '4 - 2',
+        penalty_home: 4,
+        penalty_away: 2,
+        halftimeText: 'Hiệp 1: 1 - 0 | 120 phút: 1 - 1 | Pen: 4 - 2',
+        homeScorers: [
+          { player: 'Leandro Trossard', minute: "41'" }
+        ],
+        awayScorers: [
+          { player: 'Galeno', minute: "68'" }
+        ],
+        penalties: [
+          { order: 1, team: 'home', player: 'Martin Ødegaard', scored: true },
+          { order: 2, team: 'away', player: 'Pepê', scored: true },
+          { order: 3, team: 'home', player: 'Kai Havertz', scored: true },
+          { order: 4, team: 'away', player: 'Wendell', scored: false },
+          { order: 5, team: 'home', player: 'Bukayo Saka', scored: true },
+          { order: 6, team: 'away', player: 'Marko Grujić', scored: true },
+          { order: 7, team: 'home', player: 'Declan Rice', scored: true },
+          { order: 8, team: 'away', player: 'Galeno', scored: false }
+        ]
+      },
+      league: uclLeague,
+      allLeagues: LEAGUES,
+      hotTeams: HOT_TEAMS,
+      events: [
+        { minute: 41, side: 'home', type: 'goal', player: 'Leandro Trossard' },
+        { minute: 68, side: 'away', type: 'goal', player: 'Galeno' },
+        { minute: 120, side: 'home', type: 'whistle', player: 'Hết hiệp phụ 1 - 1, bước vào luân lưu 11m' },
+        { minute: 121, side: 'home', type: 'penalty_shootout', player: 'Loạt sút luân lưu 11m kết thúc: Arsenal thắng 4 - 2' }
+      ],
+      stats: [
+        { label: 'Tỉ lệ kiểm soát bóng', home: '58%', away: '42%' },
+        { label: 'Dứt điểm hướng mục tiêu', home: '8', away: '3' },
+        { label: 'Số lần dứt điểm', home: '19', away: '10' },
+        { label: 'Số đường chuyền', home: '612', away: '430' },
+        { label: 'Phạt đền (Shootout)', home: '4', away: '2' },
+        { label: 'Phạt góc', home: '7', away: '2' }
+      ],
+      standingsGroupTitle: 'Vòng 1/8',
+      standings: SHOWCASE_UCL_STANDINGS,
+      lineups: {
+        home: TEAM_SQUADS[85] || [],
+        away: TEAM_SQUADS[529] || []
+      },
+      recentForm: {
+        home: [{ fixture_id: 91, home_team: { team_name: 'Arsenal' }, away_team: { team_name: 'Brentford' }, score: '2 - 1' }],
+        away: [{ fixture_id: 92, home_team: { team_name: 'Porto' }, away_team: { team_name: 'Benfica' }, score: '5 - 0' }]
+      }
+    });
   }
 
   // 1. Canonical Showcase Match: PSG 4 - 2 Barca (Exact 100% match to all 5 images)

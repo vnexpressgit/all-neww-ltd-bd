@@ -295,21 +295,26 @@ select,
 }
 
 .vne-score-box {
-  background-color: var(--vne-bg-subtle);
-  border-radius: var(--vds-radii-md);
-  color: var(--vds-text-regular);
+  background-color: var(--vds-surface-060, #f3f3f3) !important;
+  border-radius: var(--vds-radii-xs, 4px) !important;
+  color: var(--vds-text-regular, #202020) !important;
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 700 !important;
+  font-size: 15px !important;
   letter-spacing: 0px !important;
   white-space: nowrap !important;
   width: auto !important;
-  min-width: 66px !important;
-  padding: 4px 10px !important;
+  min-width: 58px !important;
+  height: 28px !important;
+  padding: 0 8px !important;
   display: inline-flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
   align-items: center !important;
   justify-content: center !important;
   line-height: 1 !important;
-  gap: 4px !important;
+  gap: 2px !important;
   box-sizing: border-box !important;
 }
 
@@ -616,3 +621,302 @@ select,
   border: 1px solid var(--vne-border);
 }
 
+
+/* Broadcast Channel Badge - Neutral / Monochrome (Khong mau me) */
+.vne-match-channel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--vds-typography-font-sans-serif-300), 'Merriweather Sans', -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--vds-text-subdued, #7f7f7f);
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-top: 2px;
+  width: fit-content;
+  max-width: 100%;
+  white-space: nowrap;
+  letter-spacing: 0.1px;
+  line-height: 1.2;
+}
+
+.vne-match-channel-pill .vne-tv-icon {
+  flex-shrink: 0;
+  color: var(--vds-icon-fill-subdued, #9f9f9f);
+}
+
+[data-theme="dark"] .vne-match-channel-pill {
+  background: transparent;
+  color: var(--vds-text-subdued, #ffffff80);
+}
+
+[data-theme="dark"] .vne-match-channel-pill .vne-tv-icon {
+  color: var(--vds-icon-fill-subdued, #ffffff80);
+}
+
+/* Penalty Shootout Score Display */
+.vne-score-box.has-pen {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  min-height: 32px !important;
+  padding: 2px 7px !important;
+  gap: 1px !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.vne-score-box.has-pen .vne-score-main {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+
+.vne-penalty-sub {
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: var(--vds-text-regular, #202020) !important;
+  line-height: 1 !important;
+  letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
+}
+
+
+
+/* Subpage Result Score Box with Penalty */
+.vne-subpage-score-box.has-pen {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  min-height: 36px !important;
+  padding: 3px 8px !important;
+  gap: 1px !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.vne-subpage-score-box.has-pen .vne-score-main {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  line-height: 1 !important;
+}
+
+.vne-subpage-score-box.has-pen .vne-penalty-sub {
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: var(--vds-text-regular, #202020) !important;
+  line-height: 1 !important;
+  letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
+}
+
+[data-theme="dark"] .vne-subpage-score-box.has-pen .vne-penalty-sub {
+  color: var(--vds-text-regular, #ffffff) !important;
+}
+
+/* Match Detail Hero Score Pill with Penalty */
+.vne-md-score-pill.has-pen {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  padding: 4px 18px !important;
+  height: auto !important;
+  min-height: 48px !important;
+  gap: 2px !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.vne-md-score-pill.has-pen .vne-md-score-main {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  line-height: 1 !important;
+}
+
+.vne-md-penalty-sub {
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: var(--vds-text-regular, #202020) !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
+}
+
+[data-theme="dark"] .vne-md-penalty-sub {
+  color: var(--vds-text-regular, #ffffff) !important;
+}
+
+/* Top Match Widget Mini Penalty */
+.vne-widget-pen-num {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--vds-text-regular, #202020);
+  opacity: 0.85;
+}
+
+/* Subpage Fixture Time Left Layout */
+.vne-subpage-time-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Match Detail Milestone Rows (Whistle / Shootout Notice) */
+.vne-md-tl-milestone-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 10px 0;
+  width: 100%;
+}
+
+.vne-md-tl-milestone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--vds-surface-secondary, #f1f5f9);
+  border: 1px solid var(--vds-border-subdued, #e2e8f0);
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--vds-text-regular, #334155);
+}
+
+.vne-md-tl-milestone-min {
+  font-weight: 700;
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace;
+  color: var(--vds-text-accent-primary, #9f224e);
+}
+
+/* Match Detail Shootout Sequence Card */
+.vne-md-shootout-card {
+  margin-top: 24px;
+  background: #ffffff;
+  border: 1px solid var(--vds-border-subdued, #e2e8f0);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.vne-md-shootout-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.vne-md-shootout-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--vds-text-regular, #0f172a);
+}
+
+.vne-md-shootout-score {
+  font-size: 12.5px;
+  font-family: var(--vds-typography-font-mono-100), 'Roboto Mono', monospace;
+  color: var(--vds-text-regular, #0f172a);
+}
+
+.vne-md-shootout-list {
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vne-md-shootout-row {
+  display: grid;
+  grid-template-columns: 1fr 60px 1fr;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.vne-md-shootout-side.home {
+  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vne-md-shootout-side.away {
+  text-align: left;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.vne-md-shootout-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vne-md-shootout-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.vne-md-shootout-tag.scored {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.vne-md-shootout-tag.missed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.vne-md-shootout-order {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.vne-shootout-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  margin-bottom: 1px;
+}
+
+.vne-shootout-dot.scored {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.vne-shootout-dot.missed {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.vne-md-shootout-summary {
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  font-size: 12px;
+  color: #334155;
+  text-align: center;
+}
