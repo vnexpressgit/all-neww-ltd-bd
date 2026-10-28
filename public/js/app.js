@@ -18,7 +18,15 @@ function getMatchBroadcast(match, leagueId) {
   return chs[fid % chs.length];
 }
 
-const TODAY_DATE = '2026-10-16';
+// Realtime dynamic date (GMT+7)
+function getClientTodayYmd() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+let TODAY_DATE = getClientTodayYmd();
 
 // Standard VDS Date & Time Formatters (Follows https://vnexpress-design-system.vne-designops.workers.dev/content/time/)
 function formatTemplateDateTime(eventDateStr) {
@@ -118,6 +126,13 @@ async function initApp() {
   }
   updateHeaderClock();
   setInterval(updateHeaderClock, 30000);
+
+  // Tự động cập nhật lại lịch thi đấu và kết quả mỗi 2 tiếng
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      loadFixtures();
+    }
+  }, 2 * 60 * 60 * 1000);
 
   updateModeUI(state.currentMode, false);
   await loadConfig();

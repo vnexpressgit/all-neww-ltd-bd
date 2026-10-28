@@ -67,8 +67,16 @@ const LEAGUES = [
   { id: 32, slug: 'vong-loai-wc-chau-au', name: 'World Cup - Qualification Europe', vnName: 'Vòng loại WC Châu Âu', country: 'Châu Âu', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/32.png?v=1', color: '#0d47a1' },
   { id: 34, slug: 'vong-loai-wc-nam-my', name: 'World Cup - Qualification South America', vnName: 'Vòng loại WC Nam Mỹ', country: 'Nam Mỹ', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/34.png?v=1', color: '#ffb300' },
   { id: 30, slug: 'vong-loai-wc-chau-a', name: 'World Cup - Qualification Asia', vnName: 'Vòng loại WC Châu Á', country: 'Châu Á', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/30.png?v=1', color: '#b71c1c' },
-  { id: 15, slug: 'fifa-club-world-cup', name: 'FIFA Club World Cup', vnName: 'FIFA Club World Cup', country: 'Thế giới', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/15.png?v=1', color: '#2e7d32' }
+  { id: 15, slug: 'fifa-club-world-cup', name: 'FIFA Club World Cup', vnName: 'FIFA Club World Cup', country: 'Thế giới', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/15.png?v=1', color: '#2e7d32' },
+  { id: 35, slug: 'asian-cup-qualification', name: 'Asian Cup - Qualification', vnName: 'Asian Cup - Qualification', country: 'Châu Á', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/35.png?v=1', color: '#e65100' },
+  { id: 18, slug: 'afc-champions-league-two', name: 'AFC Champions League Two', vnName: 'AFC Champions League Two', country: 'Châu Á', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/18.png?v=1', color: '#0d47a1' },
+  { id: 24, slug: 'asean-championship', name: 'ASEAN Championship', vnName: 'ASEAN Championship', country: 'Đông Nam Á', tier: 2, logo: 'https://is.vnecdn.net/objects/leagues/24.png?v=1', color: '#b71c1c' }
 ];
+
+// Helper: Realtime Date Formatter in Vietnam Time (GMT+7)
+function getTodayYmd() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+}
 
 // Top Hot Teams (from demo-final.jpeg & popular clubs)
 const HOT_TEAMS = [
@@ -104,9 +112,122 @@ const cache = {
 
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+// =========================================================================
+// REALTIME FIXTURE CRAWL SERVICE FOR ALL 28 FOOTBALL LEAGUES (2-HOUR RECURRING CRAWL)
+// Cập nhật realtime toàn bộ 28 giải bóng đá trong ứng dụng mỗi 2 tiếng một lần
+// Thời gian ứng dụng chạy theo thời gian thực (Real-Time)
+// =========================================================================
+const REALTIME_SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+const syncState = {
+  lastSyncTime: null,
+  nextSyncTime: null,
+  status: 'initialized',
+  totalLeagues: 28,
+  syncedLeaguesCount: 0,
+  totalMatches: 0,
+  finishedMatches: 0,
+  upcomingMatches: 0,
+  leagueMetrics: {},
+  lastError: null
+};
+
+async function crawlAllLeaguesRealtime() {
+  const syncStartTime = new Date();
+  console.log(`[${syncStartTime.toISOString()}] [2H CRAWLER] Bắt đầu thu thập dữ liệu realtime toàn bộ ${LEAGUES.length} giải đấu...`);
+
+  let totalMatches = 0;
+  let totalFinished = 0;
+  let totalUpcoming = 0;
+  let syncedCount = 0;
+  const metrics = {};
+
+  // Crawl in parallel batches of 5 to maximize throughput without overwhelming network
+  for (let i = 0; i < LEAGUES.length; i += 5) {
+    const batch = LEAGUES.slice(i, i + 5);
+    await Promise.all(batch.map(async (l) => {
+      try {
+        const url = `https://gw.vnexpress.net/football/fixture?league_id=${l.id}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const list = json?.data?.[String(l.id)]?.data || [];
+
+        cache.fixtures[l.id] = { data: list, timestamp: Date.now() };
+
+        const finished = list.filter(m => ['FT', 'AET', 'PEN', 'Match Finished'].includes(m.status_short)).length;
+        const upcoming = list.length - finished;
+
+        totalMatches += list.length;
+        totalFinished += finished;
+        totalUpcoming += upcoming;
+        syncedCount++;
+
+        metrics[l.id] = {
+          name: l.vnName,
+          slug: l.slug,
+          total: list.length,
+          finished,
+          upcoming
+        };
+      } catch (err) {
+        console.warn(`[2H CRAWLER] Warning khi crawl giải ${l.id} (${l.vnName}):`, err.message);
+        metrics[l.id] = {
+          name: l.vnName,
+          slug: l.slug,
+          error: err.message
+        };
+      }
+    }));
+  }
+
+  // Preload standings & topscorers for major leagues
+  const topStandingsIds = [39, 140, 135, 78, 61, 340, 307, 253, 2, 3, 848];
+  for (const id of topStandingsIds) {
+    getLeagueStandings(id).catch(() => {});
+    getLeagueTopscorers(id).catch(() => {});
+  }
+
+  syncState.lastSyncTime = syncStartTime.toISOString();
+  syncState.nextSyncTime = new Date(Date.now() + REALTIME_SYNC_INTERVAL_MS).toISOString();
+  syncState.status = 'active';
+  syncState.totalLeagues = LEAGUES.length;
+  syncState.syncedLeaguesCount = syncedCount;
+  syncState.totalMatches = totalMatches;
+  syncState.finishedMatches = totalFinished;
+  syncState.upcomingMatches = totalUpcoming;
+  syncState.leagueMetrics = metrics;
+  syncState.lastError = null;
+
+  console.log(`[${new Date().toISOString()}] [2H CRAWLER] Đã crawl thành công ${syncedCount}/${LEAGUES.length} giải (${totalMatches} trận đấu, ${totalFinished} trận kết thúc, ${totalUpcoming} trận sắp đấu). Lượt tiếp theo lúc: ${syncState.nextSyncTime}`);
+}
+
+// Thiết lập định kỳ mỗi 2 tiếng một lần
+setInterval(crawlAllLeaguesRealtime, REALTIME_SYNC_INTERVAL_MS);
+
 // Fetch fixtures for a league with cache
 async function getLeagueFixtures(leagueId) {
+  const idNum = parseInt(leagueId);
   const now = Date.now();
+
+  // If in cache and fresh within REALTIME_SYNC_INTERVAL_MS (2 hours)
+  if (cache.fixtures[idNum] && (now - cache.fixtures[idNum].timestamp < REALTIME_SYNC_INTERVAL_MS)) {
+    return cache.fixtures[idNum].data;
+  }
+
+  // Fallback fetch directly if not yet cached
+  try {
+    const res = await fetch(`https://gw.vnexpress.net/football/fixture?league_id=${idNum}`);
+    if (res.ok) {
+      const json = await res.json();
+      const list = json?.data?.[String(idNum)]?.data || [];
+      cache.fixtures[idNum] = { data: list, timestamp: now };
+      return list;
+    }
+  } catch (err) {
+    console.error(`Lỗi tải giải ${idNum}:`, err.message);
+  }
+
   if (cache.fixtures[leagueId] && (now - cache.fixtures[leagueId].timestamp < CACHE_TTL)) {
     return cache.fixtures[leagueId].data;
   }
@@ -322,25 +443,36 @@ async function getFootballNews() {
   }
 }
 
-// Preload top leagues on startup
+// Preload all 28 football leagues on startup and trigger initial 2-hour crawl
 async function preload() {
-  console.log('Preloading fixture and standings data...');
-  const topLeagueIds = [39, 2, 340, 140, 135, 78, 3, 61, 307, 253, 848];
-  for (const id of topLeagueIds) {
-    getLeagueFixtures(id).catch(() => {});
-    getLeagueStandings(id).catch(() => {});
-  }
+  console.log('Khởi động crawl toàn bộ 28 giải bóng đá theo thời gian thực...');
+  await crawlAllLeaguesRealtime();
   getFootballNews().catch(() => {});
 }
 preload();
 
-// API: System Configuration & Metadata
-app.get('/api/config', (req, res) => {
+// API: Realtime Sync Status & Manual Trigger for all 28 Football Leagues
+app.get('/api/sync-realtime', async (req, res) => {
+  const { force } = req.query;
+  if (force === 'true') {
+    await crawlAllLeaguesRealtime();
+  }
   res.json({
-    currentTime: '2026-10-16T13:46:10+07:00',
-    todayDate: '2026-10-16',
+    message: 'Dịch vụ thu thập thông tin realtime toàn bộ 28 giải bóng đá mỗi 2 tiếng một lần theo thời gian thực',
+    syncState,
+    cachedLeaguesCount: Object.keys(cache.fixtures).length
+  });
+});
+
+// API: System Configuration & Metadata (Chạy theo thời gian thực)
+app.get('/api/config', (req, res) => {
+  const todayDate = getTodayYmd();
+  res.json({
+    currentTime: new Date().toISOString(),
+    todayDate: todayDate,
     leagues: LEAGUES,
-    hotTeams: HOT_TEAMS
+    hotTeams: HOT_TEAMS,
+    syncState
   });
 });
 
@@ -416,7 +548,7 @@ app.get('/api/league-detail', async (req, res) => {
   const sortedFixtures = [...enrichedFixtures].sort((a, b) => (a.event_timestamp || 0) - (b.event_timestamp || 0));
   
   const nowTs = Math.floor(Date.now() / 1000);
-  const today = '2026-10-16';
+  const today = getTodayYmd();
 
   // Find current/next matches for top slider
   let upcomingIdx = sortedFixtures.findIndex(m => (m.event_timestamp || 0) >= nowTs - 24 * 3600);
@@ -507,7 +639,8 @@ app.get('/api/league-detail', async (req, res) => {
     pastMatches,
     standings,
     topscorers: topscorers || [],
-    news: leagueNews
+    news: leagueNews,
+    syncState
   });
 });
 
@@ -544,7 +677,7 @@ app.get('/api/news', async (req, res) => {
 // - search: search term
 app.get('/api/fixtures', async (req, res) => {
   const { mode = 'future', date, league_id, team_id, search } = req.query;
-  const today = '2026-10-16';
+  const today = getTodayYmd();
 
   let targetLeagues = LEAGUES;
   if (league_id) {

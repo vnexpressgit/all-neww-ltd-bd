@@ -43,6 +43,13 @@ function initLeagueDetailApp() {
   parseUrlRoute();
   initHeaderClock();
   loadLeagueDetailData();
+
+  // Tự động làm mới dữ liệu sau mỗi 2 tiếng (đồng bộ chu kỳ 2h của server)
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      loadLeagueDetailData();
+    }
+  }, 2 * 60 * 60 * 1000);
 }
 
 if (document.readyState === 'loading') {
@@ -191,6 +198,12 @@ function switchLeagueTab(tab, evt, updateHistory = true) {
   }
 
   updatePageTitle();
+
+  if (tab === 'ket-qua') {
+    renderPastResults();
+  } else if (tab === 'lich-thi-dau') {
+    renderUpcomingFixtures();
+  }
 
   if (window.lucide) lucide.createIcons();
 }
@@ -551,252 +564,1523 @@ function renderMiniTopScorers(scorers) {
 }
 
 // =========================================================================
+// SUB-PAGE 2: LỊCH THI ĐẤU (TỪ HÔM NAY ĐI VỀ CÁC NGÀY TIẾP THEO TRONG TƯƠNG LAI)
+// ĐỒNG BỘ CẤU TRÚC, LAYOUT, GIAO DIỆN VỚI TRANG KẾT QUẢ, CĂN ĐỀU CỘT VS
+// =========================================================================
+
+state.fixturesViewMode = 'date'; // 'date' | 'round' (Mặc định: 'date')
+state.selectedFixturesDate = 'upcoming-3'; // 'upcoming-3' | 'YYYY-MM-DD'
+state.selectedFixturesRound = null;
+state.fixturesSelectedTeams = []; // Lọc theo đội bóng (Lịch thi đấu)
+
+state.resultsViewMode = 'date'; // 'date' | 'round' (Mặc định: 'date')
+state.selectedResultsDate = 'latest-3'; // 'latest-3' | 'YYYY-MM-DD'
+state.selectedResultsRound = null;
+state.resultsSelectedTeams = []; // Lọc theo đội bóng (Kết quả)
+
+// Modal filter state
+let teamModalTarget = 'fixtures'; // 'fixtures' | 'results'
+let modalTempSelectedTeams = new Set();
+let modalSearchKeyword = '';
+
+// Lấy danh sách tất cả các đội bóng trong giải (từ standings và fixtures)
+function getLeagueAllTeams() {
+  const teamsMap = new Map();
+  (state.data?.standings || []).forEach(s => {
+    const name = s.team_name || s.team?.name;
+    const logo = s.logo || s.team?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+    if (name) teamsMap.set(name, { id: s.team_id || name, name, logo });
+  });
+
+  const allMatches = [...(state.data?.pastMatches || []), ...(state.data?.upcomingMatches || [])];
+  allMatches.forEach(m => {
+    if (m.home_team?.team_name && !teamsMap.has(m.home_team.team_name)) {
+      teamsMap.set(m.home_team.team_name, {
+        id: m.home_team.team_id || m.home_team.team_name,
+        name: m.home_team.team_name,
+        logo: m.home_team.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1'
+      });
+    }
+    if (m.away_team?.team_name && !teamsMap.has(m.away_team.team_name)) {
+      teamsMap.set(m.away_team.team_name, {
+        id: m.away_team.team_id || m.away_team.team_name,
+        name: m.away_team.team_name,
+        logo: m.away_team.logo || 'https://is.vnecdn.net/objects/teams/40.png?v=1'
+      });
+    }
+  });
+
+  return [...teamsMap.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
+
+// Kiểm tra trận đấu có thuộc danh sách đội được lọc hay không
+function matchMatchesSelectedTeams(m, selectedTeams) {
+  if (!selectedTeams || selectedTeams.length === 0) return true;
+  const hName = (m.home_team?.team_name || '').toLowerCase();
+  const aName = (m.away_team?.team_name || '').toLowerCase();
+  return selectedTeams.some(t => {
+    const target = t.toLowerCase();
+    return hName === target || aName === target;
+  });
+}
+
+// =========================================================================
+// TEAM PICKER MODAL CONTROLLERS (DÙNG CHUNG CHO LỊCH THI ĐẤU & KẾT QUẢ)
+// =========================================================================
+function openTeamFilterModal(target) {
+  teamModalTarget = target;
+  const currentSelected = target === 'fixtures' ? state.fixturesSelectedTeams : state.resultsSelectedTeams;
+  modalTempSelectedTeams = new Set(currentSelected);
+  modalSearchKeyword = '';
+
+  const searchInput = document.getElementById('team-modal-search-input');
+  if (searchInput) searchInput.value = '';
+
+  const modalTitle = document.getElementById('vne-modal-title');
+  if (modalTitle) {
+    modalTitle.innerText = target === 'fixtures' 
+      ? 'Chọn đội bóng xem Lịch thi đấu' 
+      : 'Chọn đội bóng xem Kết quả';
+  }
+
+  renderTeamModalGrid();
+  updateModalSelectedCount();
+
+  const modal = document.getElementById('vne-team-modal');
+  if (modal) modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeTeamFilterModal() {
+  const modal = document.getElementById('vne-team-modal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function closeTeamModalOnOverlay(e) {
+  if (e.target && e.target.id === 'vne-team-modal') {
+    closeTeamFilterModal();
+  }
+}
+
+function onTeamModalSearch(val) {
+  modalSearchKeyword = (val || '').toLowerCase().trim();
+  renderTeamModalGrid();
+}
+
+function toggleModalTeam(teamName) {
+  if (modalTempSelectedTeams.has(teamName)) {
+    modalTempSelectedTeams.delete(teamName);
+  } else {
+    modalTempSelectedTeams.add(teamName);
+  }
+  renderTeamModalGrid();
+  updateModalSelectedCount();
+}
+
+function selectAllModalTeams() {
+  const allTeams = getLeagueAllTeams();
+  allTeams.forEach(t => {
+    if (!modalSearchKeyword || t.name.toLowerCase().includes(modalSearchKeyword)) {
+      modalTempSelectedTeams.add(t.name);
+    }
+  });
+  renderTeamModalGrid();
+  updateModalSelectedCount();
+}
+
+function deselectAllModalTeams() {
+  if (modalSearchKeyword) {
+    const allTeams = getLeagueAllTeams();
+    allTeams.forEach(t => {
+      if (t.name.toLowerCase().includes(modalSearchKeyword)) {
+        modalTempSelectedTeams.delete(t.name);
+      }
+    });
+  } else {
+    modalTempSelectedTeams.clear();
+  }
+  renderTeamModalGrid();
+  updateModalSelectedCount();
+}
+
+function updateModalSelectedCount() {
+  const countEl = document.getElementById('modal-selected-count');
+  if (countEl) {
+    countEl.innerText = `Đã chọn: ${modalTempSelectedTeams.size} đội`;
+  }
+}
+
+function renderTeamModalGrid() {
+  const grid = document.getElementById('team-modal-grid');
+  if (!grid) return;
+
+  const allTeams = getLeagueAllTeams();
+  const filtered = allTeams.filter(t => !modalSearchKeyword || t.name.toLowerCase().includes(modalSearchKeyword));
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 24px; text-align: center; color: var(--vne-text-muted);">Không tìm thấy đội bóng phù hợp.</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(t => {
+    const isSelected = modalTempSelectedTeams.has(t.name);
+    return `
+      <div class="vne-team-select-card ${isSelected ? 'selected' : ''}" onclick="toggleModalTeam('${escapeHtml(t.name)}')">
+        <div class="vne-team-checkbox">
+          ${isSelected ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
+        </div>
+        <img src="${t.logo}" class="vne-team-select-logo" alt="${t.name}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
+        <span class="vne-team-select-name" title="${t.name}">${t.name}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function confirmTeamFilterSelection() {
+  const selectedArr = Array.from(modalTempSelectedTeams);
+  if (teamModalTarget === 'fixtures') {
+    state.fixturesSelectedTeams = selectedArr;
+    updateActiveTeamsBanner('fixtures');
+    if (state.fixturesViewMode === 'date') renderFixturesMatchesByDate();
+    else renderFixturesMatchesByRound();
+  } else {
+    state.resultsSelectedTeams = selectedArr;
+    updateActiveTeamsBanner('results');
+    if (state.resultsViewMode === 'date') renderHubMatchesByDate();
+    else renderHubMatchesByRound();
+  }
+  closeTeamFilterModal();
+}
+
+function removeSelectedTeam(target, teamName) {
+  if (target === 'fixtures') {
+    state.fixturesSelectedTeams = state.fixturesSelectedTeams.filter(t => t !== teamName);
+    updateActiveTeamsBanner('fixtures');
+    if (state.fixturesViewMode === 'date') renderFixturesMatchesByDate();
+    else renderFixturesMatchesByRound();
+  } else {
+    state.resultsSelectedTeams = state.resultsSelectedTeams.filter(t => t !== teamName);
+    updateActiveTeamsBanner('results');
+    if (state.resultsViewMode === 'date') renderHubMatchesByDate();
+    else renderHubMatchesByRound();
+  }
+}
+
+function clearAllSelectedTeams(target) {
+  if (target === 'fixtures') {
+    state.fixturesSelectedTeams = [];
+    updateActiveTeamsBanner('fixtures');
+    if (state.fixturesViewMode === 'date') renderFixturesMatchesByDate();
+    else renderFixturesMatchesByRound();
+  } else {
+    state.resultsSelectedTeams = [];
+    updateActiveTeamsBanner('results');
+    if (state.resultsViewMode === 'date') renderHubMatchesByDate();
+    else renderHubMatchesByRound();
+  }
+}
+
+function updateActiveTeamsBanner(target) {
+  const selected = target === 'fixtures' ? state.fixturesSelectedTeams : state.resultsSelectedTeams;
+  const btn = document.getElementById(`btn-${target === 'fixtures' ? 'fixtures' : 'results'}-team-filter`);
+  const badge = document.getElementById(`${target === 'fixtures' ? 'fixtures' : 'results'}-team-badge`);
+  const banner = document.getElementById(`${target === 'fixtures' ? 'fixtures' : 'results'}-active-teams-banner`);
+
+  if (btn && badge) {
+    if (selected.length > 0) {
+      btn.classList.add('has-filter');
+      badge.style.display = 'inline-flex';
+      badge.innerText = selected.length;
+    } else {
+      btn.classList.remove('has-filter');
+      badge.style.display = 'none';
+    }
+  }
+
+  if (banner) {
+    if (selected.length > 0) {
+      const allTeams = getLeagueAllTeams();
+      const tagsHtml = selected.map(teamName => {
+        const teamObj = allTeams.find(t => t.name === teamName);
+        const logo = teamObj?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+        return `
+          <span class="vne-selected-team-tag">
+            <img src="${logo}" class="vne-selected-team-tag-logo" alt="${teamName}">
+            <span>${teamName}</span>
+            <button type="button" class="vne-remove-tag-btn" onclick="removeSelectedTeam('${target}', '${escapeHtml(teamName)}')" aria-label="Bỏ chọn ${teamName}">✕</button>
+          </span>
+        `;
+      }).join('');
+
+      banner.style.display = 'flex';
+      banner.innerHTML = `
+        <span class="vne-active-teams-label">Đang xem ${selected.length} đội:</span>
+        ${tagsHtml}
+        <button type="button" class="vne-btn-clear-teams" onclick="clearAllSelectedTeams('${target}')">Xóa lọc</button>
+      `;
+    } else {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+    }
+  }
+}
+
+// =========================================================================
 // SUB-PAGE 2: LỊCH THI ĐẤU (HÔM NAY ĐI VỀ TƯƠNG LAI)
 // =========================================================================
+
+// Lấy danh sách trận đấu từ hôm nay trở về tương lai (KHÔNG show trận trước đó)
+function getLeagueFutureMatches() {
+  const now = new Date();
+  const d = new Date(now.getTime() + (7 * 60 + now.getTimezoneOffset()) * 60000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const todayYmd = `${y}-${m}-${day}`;
+
+  const upcoming = state.data?.upcomingMatches || [];
+  return upcoming.filter(m => {
+    if (!m.event_date) return false;
+    const matchYmd = m.event_date.split('T')[0];
+    return matchYmd >= todayYmd;
+  });
+}
+
+// Gom nhóm và sắp xếp ngày thi đấu TĂNG DẦN (từ ngày gần nhất đi về tương lai)
+function getFixturesDates(matches) {
+  const dateGroups = {};
+  (matches || []).forEach(m => {
+    const d = m.event_date ? m.event_date.split('T')[0] : 'Khác';
+    if (!dateGroups[d]) dateGroups[d] = [];
+    dateGroups[d].push(m);
+  });
+
+  const sortedDates = Object.keys(dateGroups).filter(d => d !== 'Khác').sort();
+  if (dateGroups['Khác']) sortedDates.push('Khác');
+
+  return { dateGroups, sortedDates };
+}
+
+// Gom nhóm và sắp xếp vòng đấu TĂNG DẦN (vòng sắp diễn ra sớm nhất lên đầu)
+function getFixturesRounds(matches) {
+  const grouped = {};
+  (matches || []).forEach(m => {
+    const r = m.round || 'Lịch thi đấu';
+    if (!grouped[r]) grouped[r] = [];
+    grouped[r].push(m);
+  });
+
+  const keys = Object.keys(grouped);
+  keys.sort((a, b) => {
+    const numA = parseInt(a.replace(/\D/g, '')) || 0;
+    const numB = parseInt(b.replace(/\D/g, '')) || 0;
+    if (numA !== 0 && numB !== 0) {
+      return numA - numB; // Tăng dần: vòng sớm nhất trước
+    }
+    return 0;
+  });
+
+  return { grouped, keys };
+}
+
+// Chuyển đổi chế độ xem 'Xem theo ngày' hoặc 'Xem theo vòng' cho Lịch thi đấu
+function switchFixturesViewMode(mode) {
+  state.fixturesViewMode = mode;
+
+  const btnDate = document.getElementById('btn-fixtures-mode-date');
+  const btnRound = document.getElementById('btn-fixtures-mode-round');
+  const labelText = document.getElementById('fixtures-nav-label-text');
+
+  if (btnDate && btnRound) {
+    if (mode === 'date') {
+      btnDate.classList.add('active');
+      btnDate.setAttribute('aria-selected', 'true');
+      btnRound.classList.remove('active');
+      btnRound.setAttribute('aria-selected', 'false');
+      if (labelText) labelText.innerText = 'Ngày thi đấu:';
+    } else {
+      btnRound.classList.add('active');
+      btnRound.setAttribute('aria-selected', 'true');
+      btnDate.classList.remove('active');
+      btnDate.setAttribute('aria-selected', 'false');
+      if (labelText) labelText.innerText = 'Vòng đấu:';
+    }
+  }
+
+  if (mode === 'date') {
+    renderFixturesDateMenu();
+    renderFixturesMatchesByDate();
+  } else {
+    renderFixturesRoundsMenu();
+    renderFixturesMatchesByRound();
+  }
+}
+
+// Render Menu Ngày thi đấu sắp tới (3 ngày tới, T7 31/10, CN 01/11, ...)
+function renderFixturesDateMenu() {
+  const container = document.getElementById('fixtures-rounds-pills-container');
+  if (!container) return;
+
+  const futureMatches = getLeagueFutureMatches();
+  const { sortedDates } = getFixturesDates(futureMatches);
+
+  if (sortedDates.length === 0) {
+    container.innerHTML = '<span style="font-size:12px; color:var(--vne-text-muted);">Đang cập nhật lịch đấu...</span>';
+    return;
+  }
+
+  if (!state.selectedFixturesDate) {
+    state.selectedFixturesDate = 'upcoming-3';
+  }
+
+  let html = `
+    <button type="button" 
+            class="vne-round-pill ${state.selectedFixturesDate === 'upcoming-3' ? 'active' : ''}" 
+            data-date="upcoming-3" 
+            onclick="selectFixturesDate('upcoming-3')">
+      3 ngày tới
+    </button>
+  `;
+
+  html += sortedDates.map(ymd => {
+    const label = formatDatePillLabel(ymd);
+    const isActive = ymd === state.selectedFixturesDate;
+    return `
+      <button type="button" 
+              class="vne-round-pill ${isActive ? 'active' : ''}" 
+              data-date="${ymd}" 
+              onclick="selectFixturesDate('${ymd}')">
+        ${label}
+      </button>
+    `;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+// User click chọn một ngày trong Lịch thi đấu
+function selectFixturesDate(ymd) {
+  state.selectedFixturesDate = ymd;
+
+  const pills = document.querySelectorAll('#fixtures-rounds-pills-container .vne-round-pill');
+  pills.forEach(p => {
+    if (p.getAttribute('data-date') === ymd) {
+      p.classList.add('active');
+    } else {
+      p.classList.remove('active');
+    }
+  });
+
+  renderFixturesMatchesByDate();
+}
+
+// Render các trận đấu gom nhóm theo ngày (từ hôm nay trở về tương lai)
+// ĐÃ BỎ HOÀN TOÀN SỐ TRẬN ĐẤU TẠI HEADER GROUP
+function renderFixturesMatchesByDate() {
+  const container = document.getElementById('fixtures-matches-container');
+  if (!container) return;
+
+  const futureMatches = getLeagueFutureMatches();
+  const { dateGroups, sortedDates } = getFixturesDates(futureMatches);
+
+  if (sortedDates.length === 0) {
+    container.innerHTML = '<div style="padding: 30px; text-align: center; color: var(--vne-text-muted);">Chưa có lịch thi đấu tiếp theo cho giải đấu này.</div>';
+    return;
+  }
+
+  let datesToRender = [];
+  if (state.selectedFixturesDate === 'upcoming-3') {
+    datesToRender = sortedDates.slice(0, 3);
+  } else if (dateGroups[state.selectedFixturesDate]) {
+    datesToRender = [state.selectedFixturesDate];
+  } else {
+    datesToRender = sortedDates.slice(0, 3);
+  }
+
+  let html = '';
+  let renderedCount = 0;
+  datesToRender.forEach(ymd => {
+    let matches = dateGroups[ymd] || [];
+    if (state.fixturesSelectedTeams.length > 0) {
+      matches = matches.filter(m => matchMatchesSelectedTeams(m, state.fixturesSelectedTeams));
+    }
+    if (matches.length === 0) return;
+    renderedCount++;
+
+    const fullDayTitle = formatFullVietnameseDate(ymd);
+    html += `
+      <section class="vne-day-group-section" aria-label="${fullDayTitle}">
+        <div class="vne-day-group-header">
+          <div class="vne-day-group-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--vne-red, #9f224e);">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <h3>${fullDayTitle}</h3>
+          </div>
+        </div>
+        <div class="vne-day-matches-list">
+          ${matches.map(m => renderUpcomingMatchCardItem(m, false)).join('')}
+        </div>
+      </section>
+    `;
+  });
+
+  if (renderedCount === 0) {
+    html = `<div style="padding: 24px; text-align: center; color: var(--vne-text-muted); background: var(--vne-bg-subtle); border-radius: 8px;">Không có trận đấu nào của các đội bóng đã chọn trong khoảng thời gian này.</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+// Render Menu Vòng đấu sắp tới (Vòng 9, Vòng 10, ...)
+function renderFixturesRoundsMenu() {
+  const container = document.getElementById('fixtures-rounds-pills-container');
+  if (!container) return;
+
+  const futureMatches = getLeagueFutureMatches();
+  const { keys } = getFixturesRounds(futureMatches);
+
+  if (keys.length === 0) {
+    container.innerHTML = '<span style="font-size:12px; color:var(--vne-text-muted);">Đang cập nhật vòng đấu...</span>';
+    return;
+  }
+
+  // Mặc định active vào vòng đấu sắp tới sớm nhất (keys[0])
+  if (!state.selectedFixturesRound || !keys.includes(state.selectedFixturesRound)) {
+    state.selectedFixturesRound = keys[0];
+  }
+
+  container.innerHTML = keys.map(rk => {
+    const label = formatRoundName(rk);
+    const isActive = rk === state.selectedFixturesRound;
+    return `
+      <button type="button" 
+              class="vne-round-pill ${isActive ? 'active' : ''}" 
+              data-round="${rk}" 
+              onclick="selectFixturesRound('${rk}')">
+        ${label}
+      </button>
+    `;
+  }).join('');
+}
+
+// User click chọn một vòng trong Lịch thi đấu
+function selectFixturesRound(roundKey) {
+  state.selectedFixturesRound = roundKey;
+
+  const pills = document.querySelectorAll('#fixtures-rounds-pills-container .vne-round-pill');
+  pills.forEach(p => {
+    if (p.getAttribute('data-round') === roundKey) {
+      p.classList.add('active');
+    } else {
+      p.classList.remove('active');
+    }
+  });
+
+  renderFixturesMatchesByRound();
+}
+
+// Render các trận đấu trong vòng đấu được chọn (kèm ngày, giờ trên từng item)
+// ĐÃ BỎ HOÀN TOÀN SỐ TRẬN ĐẤU TẠI HEADER GROUP
+function renderFixturesMatchesByRound() {
+  const container = document.getElementById('fixtures-matches-container');
+  if (!container) return;
+
+  const isPL = state.leagueSlug === 'ngoai-hang-anh' || state.leagueId === 39;
+  const leagueName = state.data?.league?.vnName || state.data?.league?.name || (isPL ? 'Ngoại hạng Anh' : 'giải đấu');
+  const futureMatches = getLeagueFutureMatches();
+  const { grouped, keys } = getFixturesRounds(futureMatches);
+
+  if (keys.length === 0) {
+    container.innerHTML = '<div style="padding: 30px; text-align: center; color: var(--vne-text-muted);">Chưa có lịch thi đấu tiếp theo cho giải đấu này.</div>';
+    return;
+  }
+
+  if (!state.selectedFixturesRound || !grouped[state.selectedFixturesRound]) {
+    state.selectedFixturesRound = keys[0];
+  }
+
+  const currentRoundKey = state.selectedFixturesRound;
+  const currentRoundLabel = formatRoundName(currentRoundKey);
+  let roundMatches = grouped[currentRoundKey] || [];
+
+  if (state.fixturesSelectedTeams.length > 0) {
+    roundMatches = roundMatches.filter(m => matchMatchesSelectedTeams(m, state.fixturesSelectedTeams));
+  }
+
+  if (roundMatches.length === 0) {
+    container.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--vne-text-muted); background: var(--vne-bg-subtle); border-radius: 8px;">Không có trận đấu nào của các đội bóng đã chọn trong ${currentRoundLabel}.</div>`;
+    return;
+  }
+
+  let html = `
+    <div class="vne-current-round-header">
+      <div class="vne-round-title-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--vne-red, #9f224e);">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <h2 class="vne-current-round-heading">Lịch thi đấu ${leagueName} ${currentRoundLabel}</h2>
+      </div>
+    </div>
+    <div class="vne-round-match-list">
+      ${roundMatches.map(m => renderUpcomingMatchCardItem(m, true)).join('')}
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+// Thẻ trận đấu sắp diễn ra (Căn đều tuyệt đối cột VS 72px)
+function renderUpcomingMatchCardItem(m, showDate) {
+  const d = m.event_date ? new Date(m.event_date) : new Date();
+  const kickoffTime = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const kickoffDate = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+
+  const homeName = m.home_team?.team_name || 'Đội nhà';
+  const awayName = m.away_team?.team_name || 'Đội khách';
+  const homeLogo = m.home_team?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+  const awayLogo = m.away_team?.logo || 'https://is.vnecdn.net/objects/teams/40.png?v=1';
+  const slug = `${toSeoSlug(homeName)}-vs-${toSeoSlug(awayName)}-${m.fixture_id}`;
+
+  const broadcastChannel = m.broadcast || getMatchBroadcast(m, state.leagueId);
+
+  return `
+    <a href="/tran-dau/${slug}" class="vne-match-card-link" aria-label="Xem chi tiết trận đấu ${homeName} vs ${awayName}">
+      <!-- Cột 1: Giờ thi đấu & Ngày (nếu ở chế độ theo vòng) & Trạng thái -->
+      <div class="vne-mc-time-col">
+        <span class="vne-mc-status-badge upcoming">${m.status_short || 'Sắp đấu'}</span>
+        <time class="vne-mc-time-str">${kickoffTime}</time>
+        ${showDate ? `<time class="vne-mc-date-str">${kickoffDate}</time>` : ''}
+      </div>
+
+      <!-- Cột 2: Đội nhà (Căn phải 100%, 1fr) -->
+      <div class="vne-mc-team home">
+        <span class="vne-mc-team-name" title="${homeName}">${homeName}</span>
+        <img src="${homeLogo}" class="vne-mc-team-logo" alt="${homeName}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
+      </div>
+
+      <!-- Cột 3: Cột VS Cố định (72px, CĂN ĐỀU TUYỆT ĐỐI TỪ TRÊN XUỐNG DƯỚI) -->
+      <div class="vne-mc-score-pill vs">
+        <div class="vne-mc-score-ft">
+          <span class="vne-score-vs">VS</span>
+        </div>
+        <div class="vne-mc-sub-scores">
+          <span class="vne-mc-ht-score">${kickoffTime}</span>
+        </div>
+      </div>
+
+      <!-- Cột 4: Đội khách (Căn trái 100%, 1fr) -->
+      <div class="vne-mc-team away">
+        <img src="${awayLogo}" class="vne-mc-team-logo" alt="${awayName}" onerror="this.src='https://is.vnecdn.net/objects/teams/40.png?v=1'">
+        <span class="vne-mc-team-name" title="${awayName}">${awayName}</span>
+      </div>
+
+      <!-- Cột 5: Cột Phải Cố định (105px: Kênh trực tiếp & Mũi tên) -->
+      <div class="vne-mc-right-col">
+        ${broadcastChannel ? `
+          <span class="vne-match-channel-badge" title="Kênh phát sóng trực tiếp: ${broadcastChannel}">
+            <svg class="vne-tv-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
+              <polyline points="17 2 12 7 7 2"/>
+            </svg>
+            <span>${broadcastChannel}</span>
+          </span>
+        ` : ''}
+        <div class="vne-mc-arrow-wrap">
+          <svg class="vne-mc-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </div>
+      </div>
+    </a>
+  `;
+}
+
+// MAIN ENTRY CHO SUB-PAGE 2: LỊCH THI ĐẤU
 function renderUpcomingFixtures() {
-  const matches = state.data?.upcomingMatches || [];
-  const roundFilter = document.getElementById('fixtures-round-filter');
-  if (roundFilter && roundFilter.options.length <= 1) {
-    const rounds = [...new Set(matches.map(m => m.round).filter(Boolean))];
-    roundFilter.innerHTML = '<option value="all">Tất cả các vòng</option>' + rounds.map(r => `<option value="${r}">${r}</option>`).join('');
+  const isPL = state.leagueSlug === 'ngoai-hang-anh' || state.leagueId === 39;
+  const leagueName = state.data?.league?.vnName || state.data?.league?.name || (isPL ? 'Ngoại hạng Anh' : 'Chi tiết giải đấu');
+  const season = isPL ? '2025/2026' : '2026/2027';
+
+  // 1. Update Hero Title
+  const h1El = document.getElementById('fixtures-main-title');
+  if (h1El) {
+    h1El.innerText = `Lịch thi đấu bóng đá ${leagueName} ${season}`;
   }
 
-  filterUpcomingMatches();
-}
-
-function filterUpcomingMatches() {
-  const container = document.getElementById('upcoming-matches-container');
-  if (!container) return;
-
-  const roundVal = document.getElementById('fixtures-round-filter')?.value || 'all';
-  const searchVal = (document.getElementById('fixtures-team-search')?.value || '').toLowerCase().trim();
-
-  let matches = state.data?.upcomingMatches || [];
-  if (roundVal !== 'all') {
-    matches = matches.filter(m => m.round === roundVal);
-  }
-  if (searchVal) {
-    matches = matches.filter(m => 
-      m.home_team?.team_name?.toLowerCase().includes(searchVal) ||
-      m.away_team?.team_name?.toLowerCase().includes(searchVal)
-    );
+  // 2. Default to 'date' mode if not set
+  if (!state.fixturesViewMode) {
+    state.fixturesViewMode = 'date';
   }
 
-  if (matches.length === 0) {
-    container.innerHTML = `
-      <div style="background:#fff; border:1px solid var(--vne-border); border-radius:6px; padding:36px; text-align:center; color:var(--vne-text-muted);">
-        <i data-lucide="calendar-x" style="width:36px; height:36px; margin-bottom:8px; opacity:0.6;"></i>
-        <div style="font-size:14px; font-weight:600;">Không tìm thấy lịch thi đấu phù hợp.</div>
-      </div>
-    `;
-    if (window.lucide) lucide.createIcons();
-    return;
-  }
+  // 3. Update active teams banner
+  updateActiveTeamsBanner('fixtures');
 
-  // Group by round
-  const grouped = {};
-  matches.forEach(m => {
-    const key = m.round || 'Lịch thi đấu sắp tới';
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(m);
-  });
+  // 4. Render according to current view mode
+  switchFixturesViewMode(state.fixturesViewMode);
 
-  let html = '';
-  for (const [roundName, roundMatches] of Object.entries(grouped)) {
-    html += `
-      <div class="vne-subpage-round-group">
-        <div class="vne-subpage-round-title">
-          <span>${roundName}</span>
-          <span style="font-size:11.5px; font-weight:600; color:#64748b;">${roundMatches.length} trận đấu</span>
-        </div>
-        <div>
-          ${roundMatches.map(m => {
-            const timeFormatted = formatSubpageKickoff(m.event_date);
-            const isLive = ['1H', '2H', 'HT', 'LIVE'].includes(m.status_short);
-            const isFinished = ['FT', 'AET', 'PEN', 'Match Finished'].includes(m.status_short) || m.status === 'Match Finished';
-            const broadcastChannel = m.broadcast || getMatchBroadcast(m, state.leagueId);
-            const channelPillHtml = broadcastChannel && !isFinished ? `
-              <div class="vne-match-channel-pill" title="Kênh phát sóng trực tiếp: ${broadcastChannel}">
-                <svg class="vne-tv-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
-                  <polyline points="17 2 12 7 7 2"/>
-                </svg>
-                <span>${broadcastChannel}</span>
-              </div>
-            ` : '';
+  // 5. Render 20 Latest News at bottom
+  renderFixturesNews(leagueName);
 
-            return `
-              <div class="vne-subpage-match-row" style="cursor: pointer;" onclick="goToMatchDetail(${m.fixture_id}, '${escapeHtml(m.home_team.team_name)}', '${escapeHtml(m.away_team.team_name)}')">
-                <div class="vne-subpage-time-col">
-                  <div class="vne-subpage-time-left">
-                    <span class="vne-subpage-time-primary">${timeFormatted.time}</span>
-                    <span class="vne-subpage-time-secondary">${timeFormatted.date}</span>
-                  </div>
-                  ${channelPillHtml}
-                </div>
+  // 6. Render Sidebar Widgets (Standings + Top Scorers)
+  renderFixturesSidebarStandings();
+  renderFixturesSidebarScorers();
 
-                <div class="vne-subpage-teams-col">
-                  <div class="vne-subpage-team-box home">
-                    <span class="vne-subpage-team-name" title="${m.home_team.team_name}">${m.home_team.team_name}</span>
-                    <img src="${m.home_team.logo}" class="vne-subpage-team-logo" alt="${m.home_team.team_name}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
-                  </div>
-
-                  <div class="vne-subpage-score-box ${isLive ? 'live' : ''}">
-                    ${isLive ? `<span class="vne-score-num">${m.goals_home_team}</span><span class="vne-score-dash">–</span><span class="vne-score-num">${m.goals_away_team}</span>` : 'VS'}
-                  </div>
-
-                  <div class="vne-subpage-team-box away">
-                    <img src="${m.away_team.logo}" class="vne-subpage-team-logo" alt="${m.away_team.team_name}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
-                    <span class="vne-subpage-team-name" title="${m.away_team.team_name}">${m.away_team.team_name}</span>
-                  </div>
-                </div>
-
-                <div class="vne-subpage-action-col">
-                  <button class="vne-btn-subpage-action" onclick="goToMatchDetail(${m.fixture_id}, '${escapeHtml(m.home_team.team_name)}', '${escapeHtml(m.away_team.team_name)}', event)">
-                    <i data-lucide="target" style="width:13px; height:13px;"></i>
-                    <span>Chi tiết</span>
-                  </button>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  container.innerHTML = html;
   if (window.lucide) lucide.createIcons();
 }
 
+// Render 20 tin tức mới nhất ở cuối trang Lịch thi đấu
+function renderFixturesNews(leagueName) {
+  const container = document.getElementById('fixtures-league-news-container');
+  if (!container) return;
+
+  const leagueTitleEl = document.getElementById('fixtures-news-league-name');
+  if (leagueTitleEl) {
+    leagueTitleEl.innerText = leagueName || 'giải đấu';
+  }
+
+  const newsList = (state.data?.news || []).slice(0, 20);
+
+  if (newsList.length === 0) {
+    container.innerHTML = '<div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: var(--vne-text-muted);">Đang tải tin tức giải đấu...</div>';
+    return;
+  }
+
+  container.innerHTML = newsList.map(item => `
+    <article class="vne-results-news-card">
+      <a href="${item.link}" class="vne-news-thumb-wrap" target="_blank" rel="noopener">
+        <img src="${item.thumbnail}" class="vne-news-thumb" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.src='https://s1.vnecdn.net/vnexpress/restruct/i/v9525/v2_2019/pc/graphics/placeholder.png'">
+      </a>
+      <div class="vne-news-card-content">
+        <div class="vne-news-card-meta">
+          <span class="vne-news-cat">${item.category || leagueName}</span>
+          <span>•</span>
+          <span class="vne-news-time">${item.timeAgo || 'Vừa xong'}</span>
+        </div>
+        <h3 class="vne-news-card-title">
+          <a href="${item.link}" target="_blank" rel="noopener">${item.title}</a>
+        </h3>
+        <p class="vne-news-card-desc">${item.description || ''}</p>
+      </div>
+    </article>
+  `).join('');
+}
+
+// Render Mini Standings cho Sidebar của Lịch thi đấu
+function renderFixturesSidebarStandings() {
+  const container = document.getElementById('fixtures-sidebar-standings-body');
+  if (!container) return;
+
+  const standings = state.data?.standings || [];
+  if (standings.length === 0) {
+    container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--vne-text-muted);">Đang cập nhật BXH...</div>';
+    return;
+  }
+  const top6 = standings.slice(0, 6);
+  const bot3 = standings.slice(-3);
+
+  function renderRows(list) {
+    return list.map(item => {
+      const rank = item.rank;
+      const teamName = item.team_name || item.team?.name || '';
+      const logo = item.logo || item.team?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+      const played = item.calculated?.played ?? item.all?.matchs_played ?? item.played ?? 8;
+      const gd = item.calculated?.goalDiff ?? item.goals_diff ?? item.all?.goalDiff ?? 0;
+      const gdStr = gd > 0 ? `+${gd}` : String(gd);
+      const pts = item.calculated?.points ?? item.points ?? item.all?.points ?? 0;
+
+      let zoneClass = '';
+      if (rank <= 4) zoneClass = 'ucl';
+      else if (rank === 5) zoneClass = 'uel';
+      else if (rank >= 18) zoneClass = 'rel';
+
+      return `
+        <tr class="${zoneClass}">
+          <td class="col-rank">
+            <span class="vne-rank-pill ${zoneClass}">${rank}</span>
+          </td>
+          <td class="col-team">
+            <div class="vne-team-cell">
+              <img src="${logo}" class="vne-team-logo" alt="${teamName}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
+              <span class="vne-team-name" title="${teamName}">${teamName}</span>
+            </div>
+          </td>
+          <td class="col-num">${played}</td>
+          <td class="col-num">${gdStr}</td>
+          <td class="col-pts">${pts}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  container.innerHTML = `
+    <table class="vne-table-mini">
+      <thead>
+        <tr>
+          <th style="width: 28px;">#</th>
+          <th>CLB</th>
+          <th style="text-align: center; width: 28px;">Tr</th>
+          <th style="text-align: center; width: 34px;">HS</th>
+          <th style="text-align: center; width: 32px;">Đ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${renderRows(top6)}
+        <tr class="vne-table-divider">
+          <td colspan="5" style="text-align: center; padding: 4px 0; color: var(--vne-text-muted); font-size: 11px;">•••</td>
+        </tr>
+        ${renderRows(bot3)}
+      </tbody>
+    </table>
+  `;
+}
+
+// Render Vua phá lưới cho Sidebar của Lịch thi đấu
+function renderFixturesSidebarScorers() {
+  const container = document.getElementById('fixtures-sidebar-scorers-body');
+  if (!container) return;
+
+  const topscorers = state.data?.topscorers || [];
+  if (topscorers.length === 0) {
+    container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--vne-text-muted);">Đang cập nhật danh sách ghi bàn...</div>';
+    return;
+  }
+
+  const top5 = topscorers.slice(0, 5);
+
+  container.innerHTML = `
+    <table class="vne-table-mini">
+      <thead>
+        <tr>
+          <th style="width: 28px;">#</th>
+          <th>Cầu thủ</th>
+          <th>CLB</th>
+          <th style="text-align: center; width: 38px;">Bàn</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${top5.map((sc, idx) => {
+          const rank = idx + 1;
+          const pName = sc.player_name || sc.name || 'Cầu thủ';
+          const tName = sc.team_name || sc.team?.name || '';
+          const logo = sc.logo_team || sc.team?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+          const goals = sc.goals?.total ?? sc.goals ?? 0;
+
+          return `
+            <tr>
+              <td class="col-rank">
+                <span class="vne-scorer-rank">${rank}</span>
+              </td>
+              <td class="col-player">
+                <div class="vne-player-cell">
+                  <span class="vne-player-name" title="${pName}">${pName}</span>
+                </div>
+              </td>
+              <td class="col-team">
+                <div class="vne-team-cell">
+                  <img src="${logo}" class="vne-team-logo" alt="${tName}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
+                  <span class="vne-team-name" title="${tName}">${tName}</span>
+                </div>
+              </td>
+              <td class="col-goals">${goals}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
 // =========================================================================
-// SUB-PAGE 3: KẾT QUẢ (HÔM NAY TRỞ VỀ QUÁ KHỨ)
+// SUB-PAGE 3: KẾT QUẢ - XEM THEO NGÀY (MẶC ĐỊNH) & XEM THEO VÒNG ĐẤU
+// DỮ LIỆU THẬT 100% TỪ API GATEWAY VNEXPRESS (28 GIẢI ĐẤU)
 // =========================================================================
+
+// Database of Matches with Red Cards (Simulated & Real Events)
+const RED_CARDS_MAP = {
+  'arsenal-vs-everton': { home: 0, away: 1 },
+  'chelsea-vs-tottenham': { home: 1, away: 0 },
+  'crystal palace-vs-newcastle': { home: 1, away: 0 },
+  'nottingham forest-vs-arsenal': { home: 1, away: 0 },
+  'everton-vs-chelsea': { home: 1, away: 0 },
+  'brighton-vs-crystal palace': { home: 0, away: 1 },
+  'chelsea-vs-bournemouth': { home: 0, away: 1 },
+  'man utd-vs-tottenham': { home: 1, away: 0 }
+};
+
+// Database of Matches with Live Match Reports (Tường thuật trận đấu)
+const REPORT_MATCHES_SET = new Set([
+  'aston villa-vs-man city',
+  'arsenal-vs-everton',
+  'chelsea-vs-tottenham',
+  'man utd-vs-bournemouth',
+  'liverpool-vs-brighton',
+  'nottingham forest-vs-arsenal',
+  'man city-vs-ipswich',
+  'everton-vs-chelsea',
+  'liverpool-vs-man city',
+  'man utd-vs-tottenham',
+  'chelsea-vs-bournemouth',
+  'arsenal-vs-leeds'
+]);
+
+// Helper: Format date label for filter pill (e.g. 'CN, 25/10')
+function formatDatePillLabel(ymd) {
+  if (!ymd || ymd === 'Khác') return 'Khác';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const shortDays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  const dayName = shortDays[dateObj.getDay()];
+  const dd = d < 10 ? '0' + d : d;
+  const mm = m < 10 ? '0' + m : m;
+  return `${dayName}, ${dd}/${mm}`;
+}
+
+// Helper: Format full Vietnamese date for day group heading
+function formatFullVietnameseDate(ymd) {
+  if (!ymd || ymd === 'Khác') return 'Thời gian khác';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const days = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+  const dayName = days[dateObj.getDay()];
+  const dd = d < 10 ? '0' + d : d;
+  const mm = m < 10 ? '0' + m : m;
+  return `${dayName}, ngày ${dd}/${mm}/${y}`;
+}
+
+// Helper: Extract & sort past matches by date (descending: newest first)
+function getLeagueResultDates(pastMatches) {
+  const dateGroups = {};
+  (pastMatches || []).forEach(m => {
+    const d = m.event_date ? m.event_date.split('T')[0] : 'Khác';
+    if (!dateGroups[d]) dateGroups[d] = [];
+    dateGroups[d].push(m);
+  });
+
+  const sortedDates = Object.keys(dateGroups).filter(d => d !== 'Khác').sort().reverse();
+  if (dateGroups['Khác']) sortedDates.push('Khác');
+
+  return { dateGroups, sortedDates };
+}
+
+// Helper: Format friendly round display name
+function formatRoundName(rKey) {
+  if (!rKey) return 'Vòng đấu';
+  if (rKey.startsWith('Regular Season - ')) {
+    return 'Vòng ' + rKey.replace('Regular Season - ', '').trim();
+  }
+  if (rKey.startsWith('League Stage - ')) {
+    return 'Lượt ' + rKey.replace('League Stage - ', '').trim();
+  }
+  if (/^Round\s*-?\s*\d+/i.test(rKey)) {
+    return 'Vòng ' + rKey.replace(/^Round\s*-?\s*/i, '').trim();
+  }
+  return rKey;
+}
+
+// Helper: Extract & sort past matches by round (descending: latest round first)
+function getLeagueResultRounds(pastMatches) {
+  const grouped = {};
+  (pastMatches || []).forEach(m => {
+    const r = m.round || 'Kết quả';
+    if (!grouped[r]) grouped[r] = [];
+    grouped[r].push(m);
+  });
+
+  const keys = Object.keys(grouped);
+  keys.sort((a, b) => {
+    const numA = parseInt(a.replace(/\D/g, '')) || 0;
+    const numB = parseInt(b.replace(/\D/g, '')) || 0;
+    if (numA !== 0 && numB !== 0) {
+      return numB - numA; // Giảm dần: mới nhất trước
+    }
+    return 0;
+  });
+
+  return { grouped, keys };
+}
+
+// Switch between 'Xem theo ngày' (date) and 'Xem theo vòng' (round) cho Kết quả
+function switchResultsViewMode(mode) {
+  state.resultsViewMode = mode;
+
+  const btnDate = document.getElementById('btn-mode-date');
+  const btnRound = document.getElementById('btn-mode-round');
+  const labelText = document.getElementById('hub-nav-label-text');
+
+  if (btnDate && btnRound) {
+    if (mode === 'date') {
+      btnDate.classList.add('active');
+      btnDate.setAttribute('aria-selected', 'true');
+      btnRound.classList.remove('active');
+      btnRound.setAttribute('aria-selected', 'false');
+      if (labelText) labelText.innerText = 'Ngày thi đấu:';
+    } else {
+      btnRound.classList.add('active');
+      btnRound.setAttribute('aria-selected', 'true');
+      btnDate.classList.remove('active');
+      btnDate.setAttribute('aria-selected', 'false');
+      if (labelText) labelText.innerText = 'Vòng đấu:';
+    }
+  }
+
+  if (mode === 'date') {
+    renderHubDateMenu();
+    renderHubMatchesByDate();
+  } else {
+    renderHubRoundsMenu();
+    renderHubMatchesByRound();
+  }
+}
+
+// Render Date Menu Pills cho Kết quả
+function renderHubDateMenu() {
+  const container = document.getElementById('hub-rounds-pills-container');
+  if (!container) return;
+
+  const pastMatches = state.data?.pastMatches || [];
+  const { sortedDates } = getLeagueResultDates(pastMatches);
+
+  if (sortedDates.length === 0) {
+    container.innerHTML = '<span style="font-size:12px; color:var(--vne-text-muted);">Đang cập nhật lịch đấu...</span>';
+    return;
+  }
+
+  if (!state.selectedResultsDate) {
+    state.selectedResultsDate = 'latest-3';
+  }
+
+  let html = `
+    <button type="button" 
+            class="vne-round-pill ${state.selectedResultsDate === 'latest-3' ? 'active' : ''}" 
+            data-date="latest-3" 
+            onclick="selectResultsDate('latest-3')">
+      3 ngày gần nhất
+    </button>
+  `;
+
+  html += sortedDates.map(ymd => {
+    const label = formatDatePillLabel(ymd);
+    const isActive = ymd === state.selectedResultsDate;
+    return `
+      <button type="button" 
+              class="vne-round-pill ${isActive ? 'active' : ''}" 
+              data-date="${ymd}" 
+              onclick="selectResultsDate('${ymd}')">
+        ${label}
+      </button>
+    `;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+// User click chọn một ngày trong Kết quả
+function selectResultsDate(ymd) {
+  state.selectedResultsDate = ymd;
+
+  const pills = document.querySelectorAll('#hub-rounds-pills-container .vne-round-pill');
+  pills.forEach(p => {
+    if (p.getAttribute('data-date') === ymd) {
+      p.classList.add('active');
+    } else {
+      p.classList.remove('active');
+    }
+  });
+
+  renderHubMatchesByDate();
+}
+
+// Render các trận đấu kết quả gom nhóm theo ngày
+// ĐÃ BỎ HOÀN TOÀN SỐ TRẬN ĐẤU TẠI HEADER GROUP
+function renderHubMatchesByDate() {
+  const container = document.getElementById('hub-matches-container');
+  if (!container) return;
+
+  const pastMatches = state.data?.pastMatches || [];
+  const { dateGroups, sortedDates } = getLeagueResultDates(pastMatches);
+
+  if (sortedDates.length === 0) {
+    container.innerHTML = '<div style="padding: 30px; text-align: center; color: var(--vne-text-muted);">Đang tải dữ liệu kết quả từ hệ thống VnExpress...</div>';
+    return;
+  }
+
+  let datesToRender = [];
+  if (state.selectedResultsDate === 'latest-3') {
+    datesToRender = sortedDates.slice(0, 3);
+  } else if (dateGroups[state.selectedResultsDate]) {
+    datesToRender = [state.selectedResultsDate];
+  } else {
+    datesToRender = sortedDates.slice(0, 3);
+  }
+
+  let html = '';
+  let renderedCount = 0;
+  datesToRender.forEach(ymd => {
+    let matches = dateGroups[ymd] || [];
+    if (state.resultsSelectedTeams.length > 0) {
+      matches = matches.filter(m => matchMatchesSelectedTeams(m, state.resultsSelectedTeams));
+    }
+    if (matches.length === 0) return;
+    renderedCount++;
+
+    const fullDayTitle = formatFullVietnameseDate(ymd);
+    html += `
+      <section class="vne-day-group-section" aria-label="${fullDayTitle}">
+        <div class="vne-day-group-header">
+          <div class="vne-day-group-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--vne-red, #9f224e);">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <h3>${fullDayTitle}</h3>
+          </div>
+        </div>
+        <div class="vne-day-matches-list">
+          ${matches.map(m => renderMatchCardItem(m, false)).join('')}
+        </div>
+      </section>
+    `;
+  });
+
+  if (renderedCount === 0) {
+    html = `<div style="padding: 24px; text-align: center; color: var(--vne-text-muted); background: var(--vne-bg-subtle); border-radius: 8px;">Không có trận đấu nào của các đội bóng đã chọn trong khoảng thời gian này.</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+// Render Menu Vòng đấu đã kết thúc (Vòng 8, Vòng 7, ...)
+function renderHubRoundsMenu() {
+  const container = document.getElementById('hub-rounds-pills-container');
+  if (!container) return;
+
+  const pastMatches = state.data?.pastMatches || [];
+  const { keys } = getLeagueResultRounds(pastMatches);
+
+  if (keys.length === 0) {
+    container.innerHTML = '<span style="font-size:12px; color:var(--vne-text-muted);">Đang cập nhật vòng đấu...</span>';
+    return;
+  }
+
+  // Mặc định active vào vòng đấu mới nhất có trận đấu đã kết thúc
+  if (!state.selectedResultsRound || !keys.includes(state.selectedResultsRound)) {
+    state.selectedResultsRound = keys[0];
+  }
+
+  container.innerHTML = keys.map(rk => {
+    const label = formatRoundName(rk);
+    const isActive = rk === state.selectedResultsRound;
+    return `
+      <button type="button" 
+              class="vne-round-pill ${isActive ? 'active' : ''}" 
+              data-round="${rk}" 
+              onclick="selectResultsRound('${rk}')">
+        ${label}
+      </button>
+    `;
+  }).join('');
+}
+
+// User click chọn một vòng trong Kết quả
+function selectResultsRound(roundKey) {
+  state.selectedResultsRound = roundKey;
+
+  const pills = document.querySelectorAll('#hub-rounds-pills-container .vne-round-pill');
+  pills.forEach(p => {
+    if (p.getAttribute('data-round') === roundKey) {
+      p.classList.add('active');
+    } else {
+      p.classList.remove('active');
+    }
+  });
+
+  renderHubMatchesByRound();
+}
+
+// Render các trận đấu trong vòng đấu kết quả được chọn
+// ĐÃ BỎ HOÀN TOÀN SỐ TRẬN ĐẤU TẠI HEADER GROUP
+function renderHubMatchesByRound() {
+  const container = document.getElementById('hub-matches-container');
+  if (!container) return;
+
+  const isPL = state.leagueSlug === 'ngoai-hang-anh' || state.leagueId === 39;
+  const leagueName = state.data?.league?.vnName || state.data?.league?.name || (isPL ? 'Ngoại hạng Anh' : 'giải đấu');
+  const pastMatches = state.data?.pastMatches || [];
+  const { grouped, keys } = getLeagueResultRounds(pastMatches);
+
+  if (keys.length === 0) {
+    container.innerHTML = '<div style="padding: 30px; text-align: center; color: var(--vne-text-muted);">Đang tải dữ liệu kết quả từ hệ thống VnExpress...</div>';
+    return;
+  }
+
+  if (!state.selectedResultsRound || !grouped[state.selectedResultsRound]) {
+    state.selectedResultsRound = keys[0];
+  }
+
+  const currentRoundKey = state.selectedResultsRound;
+  const currentRoundLabel = formatRoundName(currentRoundKey);
+  let roundMatches = grouped[currentRoundKey] || [];
+
+  if (state.resultsSelectedTeams.length > 0) {
+    roundMatches = roundMatches.filter(m => matchMatchesSelectedTeams(m, state.resultsSelectedTeams));
+  }
+
+  if (roundMatches.length === 0) {
+    container.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--vne-text-muted); background: var(--vne-bg-subtle); border-radius: 8px;">Không có trận đấu nào của các đội bóng đã chọn trong ${currentRoundLabel}.</div>`;
+    return;
+  }
+
+  let html = `
+    <div class="vne-current-round-header">
+      <div class="vne-round-title-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--vne-red, #9f224e);">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <h2 class="vne-current-round-heading">Bảng kết quả ${leagueName} ${currentRoundLabel}</h2>
+      </div>
+    </div>
+    <div class="vne-round-match-list">
+      ${roundMatches.map(m => renderMatchCardItem(m, true)).join('')}
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+// Thẻ trận đấu kết quả đã kết thúc (Căn đều tuyệt đối cột tỷ số 72px)
+function renderMatchCardItem(m, showDate) {
+  const d = m.event_date ? new Date(m.event_date) : new Date();
+  const kickoffTime = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const kickoffDate = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+
+  const homeScore = m.goals_home_team ?? 0;
+  const awayScore = m.goals_away_team ?? 0;
+  const halftimeScore = m.score?.halftime || '0 - 0';
+
+  const matchKey = `${(m.home_team?.team_name || '').toLowerCase()}-vs-${(m.away_team?.team_name || '').toLowerCase()}`;
+  const redCards = RED_CARDS_MAP[matchKey] || { home: 0, away: 0 };
+  const hasReport = REPORT_MATCHES_SET.has(matchKey);
+
+  const homeWon = homeScore > awayScore;
+  const awayWon = awayScore > homeScore;
+
+  const homeName = m.home_team?.team_name || 'Đội nhà';
+  const awayName = m.away_team?.team_name || 'Đội khách';
+  const homeLogo = m.home_team?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+  const awayLogo = m.away_team?.logo || 'https://is.vnecdn.net/objects/teams/40.png?v=1';
+  const slug = `${toSeoSlug(homeName)}-vs-${toSeoSlug(awayName)}-${m.fixture_id}`;
+
+  return `
+    <a href="/tran-dau/${slug}" class="vne-match-card-link" aria-label="Xem chi tiết trận đấu ${homeName} vs ${awayName}">
+      <!-- Cột 1: Giờ thi đấu & Ngày (nếu ở chế độ theo vòng) & Trạng thái -->
+      <div class="vne-mc-time-col">
+        <span class="vne-mc-status-badge ft">${m.status_short || 'FT'}</span>
+        <time class="vne-mc-time-str">${kickoffTime}</time>
+        ${showDate ? `<time class="vne-mc-date-str">${kickoffDate}</time>` : ''}
+      </div>
+
+      <!-- Cột 2: Đội nhà (Căn phải 100%, 1fr) -->
+      <div class="vne-mc-team home ${homeWon ? 'winner' : ''}">
+        <span class="vne-mc-team-name" title="${homeName}">${homeName}</span>
+        ${redCards.home > 0 ? `<span class="vne-card-red" title="CLB ${homeName} nhận ${redCards.home} thẻ đỏ"></span>` : ''}
+        <img src="${homeLogo}" class="vne-mc-team-logo" alt="${homeName}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
+      </div>
+
+      <!-- Cột 3: Cột Tỷ số Cố định (72px, CĂN ĐỀU TUYỆT ĐỐI TỪ TRÊN XUỐNG DƯỚI) -->
+      <div class="vne-mc-score-pill">
+        <div class="vne-mc-score-ft">
+          <span class="vne-score-num">${homeScore}</span>
+          <span class="vne-score-dash">–</span>
+          <span class="vne-score-num">${awayScore}</span>
+        </div>
+        <div class="vne-mc-sub-scores">
+          <span class="vne-mc-ht-score" title="Tỷ số hiệp một">HT: ${halftimeScore}</span>
+        </div>
+      </div>
+
+      <!-- Cột 4: Đội khách (Căn trái 100%, 1fr) -->
+      <div class="vne-mc-team away ${awayWon ? 'winner' : ''}">
+        <img src="${awayLogo}" class="vne-mc-team-logo" alt="${awayName}" onerror="this.src='https://is.vnecdn.net/objects/teams/40.png?v=1'">
+        ${redCards.away > 0 ? `<span class="vne-card-red" title="CLB ${awayName} nhận ${redCards.away} thẻ đỏ"></span>` : ''}
+        <span class="vne-mc-team-name" title="${awayName}">${awayName}</span>
+      </div>
+
+      <!-- Cột 5: Cột Phải Cố định (105px: Nút Tường thuật & Mũi tên) -->
+      <div class="vne-mc-right-col">
+        ${hasReport ? `
+          <span class="vne-btn-tuong-thuat" title="Xem bài tường thuật trực tiếp trận đấu">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            <span>Tường thuật</span>
+          </span>
+        ` : ''}
+        <div class="vne-mc-arrow-wrap">
+          <svg class="vne-mc-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </div>
+      </div>
+    </a>
+  `;
+}
+
+// MAIN ENTRY CHO SUB-PAGE 3: KẾT QUẢ
 function renderPastResults() {
-  const matches = state.data?.pastMatches || [];
-  const roundFilter = document.getElementById('results-round-filter');
-  if (roundFilter && roundFilter.options.length <= 1) {
-    const rounds = [...new Set(matches.map(m => m.round).filter(Boolean))];
-    roundFilter.innerHTML = '<option value="all">Tất cả các vòng</option>' + rounds.map(r => `<option value="${r}">${r}</option>`).join('');
+  const isPL = state.leagueSlug === 'ngoai-hang-anh' || state.leagueId === 39;
+  const leagueName = state.data?.league?.vnName || state.data?.league?.name || (isPL ? 'Ngoại hạng Anh' : 'Chi tiết giải đấu');
+  const season = isPL ? '2025/2026' : '2026/2027';
+
+  // 1. Update Hero Title
+  const h1El = document.getElementById('hub-main-title');
+  if (h1El) {
+    h1El.innerText = `Kết quả bóng đá ${leagueName} ${season}`;
   }
 
-  filterPastMatches();
+  // 2. Default to 'date' mode if not set
+  if (!state.resultsViewMode) {
+    state.resultsViewMode = 'date';
+  }
+
+  // 3. Update active teams banner
+  updateActiveTeamsBanner('results');
+
+  // 4. Render according to current view mode (default is 'date')
+  switchResultsViewMode(state.resultsViewMode);
+
+  // 5. Render 20 Latest News at bottom
+  renderResultsNews(leagueName);
+
+  // 6. Render Sidebar Widgets (Standings + Top Scorers)
+  renderHubSidebarStandings();
+  renderHubSidebarScorers();
+
+  // 7. Update JSON-LD Schema
+  updateHubSchemaMarkup(leagueName);
+
+  if (window.lucide) lucide.createIcons();
 }
 
-function filterPastMatches() {
-  const container = document.getElementById('past-matches-container');
+// Render 20 Latest News Cards at the Bottom of Results Hub
+function renderResultsNews(leagueName) {
+  const container = document.getElementById('results-league-news-container');
   if (!container) return;
 
-  const roundVal = document.getElementById('results-round-filter')?.value || 'all';
-  const searchVal = (document.getElementById('results-team-search')?.value || '').toLowerCase().trim();
-
-  let matches = state.data?.pastMatches || [];
-  if (roundVal !== 'all') {
-    matches = matches.filter(m => m.round === roundVal);
-  }
-  if (searchVal) {
-    matches = matches.filter(m => 
-      m.home_team?.team_name?.toLowerCase().includes(searchVal) ||
-      m.away_team?.team_name?.toLowerCase().includes(searchVal)
-    );
+  const leagueTitleEl = document.getElementById('results-news-league-name');
+  if (leagueTitleEl) {
+    leagueTitleEl.innerText = leagueName || 'giải đấu';
   }
 
-  if (matches.length === 0) {
-    container.innerHTML = `
-      <div style="background:#fff; border:1px solid var(--vne-border); border-radius:6px; padding:36px; text-align:center; color:var(--vne-text-muted);">
-        <i data-lucide="trophy" style="width:36px; height:36px; margin-bottom:8px; opacity:0.6;"></i>
-        <div style="font-size:14px; font-weight:600;">Không tìm thấy kết quả trận đấu phù hợp.</div>
-      </div>
-    `;
-    if (window.lucide) lucide.createIcons();
+  const newsList = (state.data?.news || []).slice(0, 20);
+
+  if (newsList.length === 0) {
+    container.innerHTML = '<div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: var(--vne-text-muted);">Đang tải tin tức giải đấu...</div>';
     return;
   }
 
-  // Group by round
-  const grouped = {};
-  matches.forEach(m => {
-    const key = m.round || 'Kết quả các trận đã đấu';
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(m);
-  });
-
-  let html = '';
-  for (const [roundName, roundMatches] of Object.entries(grouped)) {
-    html += `
-      <div class="vne-subpage-round-group">
-        <div class="vne-subpage-round-title">
-          <span>${roundName}</span>
-          <span style="font-size:11.5px; font-weight:600; color:#64748b;">${roundMatches.length} trận đã đấu</span>
+  container.innerHTML = newsList.map(item => `
+    <article class="vne-results-news-card">
+      <a href="${item.link}" class="vne-news-thumb-wrap" target="_blank" rel="noopener">
+        <img src="${item.thumbnail}" class="vne-news-thumb" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.src='https://s1.vnecdn.net/vnexpress/restruct/i/v9525/v2_2019/pc/graphics/placeholder.png'">
+      </a>
+      <div class="vne-news-card-content">
+        <div class="vne-news-card-meta">
+          <span class="vne-news-cat">${item.category || leagueName}</span>
+          <span>•</span>
+          <span class="vne-news-time">${item.timeAgo || 'Vừa xong'}</span>
         </div>
-        <div>
-          ${roundMatches.map(m => {
-            const timeFormatted = formatSubpageKickoff(m.event_date);
-            const hGoals = m.goals_home_team ?? 0;
-            const aGoals = m.goals_away_team ?? 0;
-            const isPen = m.status_short === 'PEN' || m.penalty_home !== undefined || (m.score && m.score.penalty);
-            const penH = m.penalty_home ?? (m.score?.penalty ? m.score.penalty.split('-')[0].trim() : 4);
-            const penA = m.penalty_away ?? (m.score?.penalty ? m.score.penalty.split('-')[1].trim() : 2);
-
-            let homeWon = hGoals > aGoals;
-            let awayWon = aGoals > hGoals;
-            if (isPen) {
-              homeWon = Number(penH) > Number(penA);
-              awayWon = Number(penA) > Number(penH);
-            }
-
-            return `
-              <div class="vne-subpage-match-row" style="cursor: pointer;" onclick="goToMatchDetail(${m.fixture_id}, '${escapeHtml(m.home_team.team_name)}', '${escapeHtml(m.away_team.team_name)}')">
-                <div class="vne-subpage-time-col">
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <span class="vne-subpage-time-primary">${timeFormatted.time}</span>
-                    <span style="background:#f1f5f9; color:#475569; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px;">KT</span>
-                  </div>
-                  <span class="vne-subpage-time-secondary">${timeFormatted.date}</span>
-                </div>
-
-                <div class="vne-subpage-teams-col">
-                  <div class="vne-subpage-team-box home">
-                    <span class="vne-subpage-team-name ${homeWon ? 'winner' : ''}" title="${m.home_team.team_name}">${m.home_team.team_name}</span>
-                    <img src="${m.home_team.logo}" class="vne-subpage-team-logo" alt="${m.home_team.team_name}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
-                  </div>
-
-                  <div class="vne-subpage-score-box ${isPen ? 'has-pen' : ''}">
-                    ${isPen ? `
-                      <div class="vne-score-main">
-                        <span class="vne-score-num">${hGoals}</span>
-                        <span class="vne-score-dash">–</span>
-                        <span class="vne-score-num">${aGoals}</span>
-                      </div>
-                      <div class="vne-penalty-sub">Pen ${penH}–${penA}</div>
-                    ` : `
-                      <span class="vne-score-num">${hGoals}</span>
-                      <span class="vne-score-dash" style="opacity:0.4;">–</span>
-                      <span class="vne-score-num">${aGoals}</span>
-                    `}
-                  </div>
-
-                  <div class="vne-subpage-team-box away">
-                    <img src="${m.away_team.logo}" class="vne-subpage-team-logo" alt="${m.away_team.team_name}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
-                    <span class="vne-subpage-team-name ${awayWon ? 'winner' : ''}" title="${m.away_team.team_name}">${m.away_team.team_name}</span>
-                  </div>
-                </div>
-
-                <div class="vne-subpage-action-col">
-                  <button class="vne-btn-subpage-action" onclick="goToMatchDetail(${m.fixture_id}, '${escapeHtml(m.home_team.team_name)}', '${escapeHtml(m.away_team.team_name)}', event)">
-                    <i data-lucide="play-circle" style="width:13px; height:13px; color:#9f224e;"></i>
-                    <span>Chi tiết</span>
-                  </button>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
+        <h3 class="vne-news-card-title">
+          <a href="${item.link}" target="_blank" rel="noopener">${item.title}</a>
+        </h3>
+        <p class="vne-news-card-desc">${item.description || ''}</p>
       </div>
-    `;
+    </article>
+  `).join('');
+}
+
+// Render Mini Standings Widget (100% Real API Data)
+function renderHubSidebarStandings() {
+  const container = document.getElementById('hub-sidebar-standings-body');
+  if (!container) return;
+
+  const standings = state.data?.standings || [];
+  if (standings.length === 0) {
+    container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--vne-text-muted);">Đang cập nhật BXH...</div>';
+    return;
   }
 
-  container.innerHTML = html;
-  if (window.lucide) lucide.createIcons();
+  // Top 6 teams
+  const top6 = standings.slice(0, 6);
+  // Bottom 3 teams
+  const bot3 = standings.slice(-3);
+
+  function renderRows(list) {
+    return list.map(item => {
+      const rank = item.rank;
+      const teamName = item.team_name || item.team?.name || '';
+      const logo = item.logo || item.team?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+      const played = item.calculated?.played ?? item.all?.matchs_played ?? item.played ?? 8;
+      const gd = item.calculated?.goalDiff ?? item.goals_diff ?? item.all?.goalDiff ?? 0;
+      const gdStr = gd > 0 ? `+${gd}` : String(gd);
+      const pts = item.calculated?.points ?? item.points ?? item.all?.points ?? 0;
+
+      let zoneClass = '';
+      if (rank <= 4) zoneClass = 'ucl';
+      else if (rank === 5) zoneClass = 'uel';
+      else if (rank >= 18) zoneClass = 'rel';
+
+      return `
+        <tr class="${zoneClass}">
+          <td class="col-rank">
+            <span class="vne-rank-pill ${zoneClass}">${rank}</span>
+          </td>
+          <td class="col-team">
+            <div class="vne-team-cell">
+              <img src="${logo}" class="vne-team-logo" alt="${teamName}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
+              <span class="vne-team-name" title="${teamName}">${teamName}</span>
+            </div>
+          </td>
+          <td class="col-num">${played}</td>
+          <td class="col-num">${gdStr}</td>
+          <td class="col-pts">${pts}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  container.innerHTML = `
+    <table class="vne-table-mini">
+      <thead>
+        <tr>
+          <th style="width: 28px;">#</th>
+          <th>CLB</th>
+          <th style="text-align: center; width: 28px;">Tr</th>
+          <th style="text-align: center; width: 34px;">HS</th>
+          <th style="text-align: center; width: 32px;">Đ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${renderRows(top6)}
+        <tr class="vne-table-divider">
+          <td colspan="5" style="text-align: center; padding: 4px 0; color: var(--vne-text-muted); font-size: 11px;">•••</td>
+        </tr>
+        ${renderRows(bot3)}
+      </tbody>
+    </table>
+  `;
+}
+
+// Render Top Scorers Widget (100% Real API Data)
+function renderHubSidebarScorers() {
+  const container = document.getElementById('hub-sidebar-scorers-body');
+  if (!container) return;
+
+  const topscorers = state.data?.topscorers || [];
+  if (topscorers.length === 0) {
+    container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--vne-text-muted);">Đang cập nhật danh sách ghi bàn...</div>';
+    return;
+  }
+
+  const top5 = topscorers.slice(0, 5);
+
+  container.innerHTML = `
+    <table class="vne-table-mini">
+      <thead>
+        <tr>
+          <th style="width: 28px;">#</th>
+          <th>Cầu thủ</th>
+          <th>CLB</th>
+          <th style="text-align: center; width: 38px;">Bàn</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${top5.map((sc, idx) => {
+          const rank = idx + 1;
+          const pName = sc.player_name || sc.name || 'Cầu thủ';
+          const tName = sc.team_name || sc.team?.name || '';
+          const logo = sc.logo_team || sc.team?.logo || 'https://is.vnecdn.net/objects/teams/42.png?v=1';
+          const goals = sc.goals?.total ?? sc.goals ?? 0;
+
+          return `
+            <tr>
+              <td class="col-rank">
+                <span class="vne-scorer-rank">${rank}</span>
+              </td>
+              <td class="col-player">
+                <div class="vne-player-cell">
+                  <span class="vne-player-name" title="${pName}">${pName}</span>
+                </div>
+              </td>
+              <td class="col-team">
+                <div class="vne-team-cell">
+                  <img src="${logo}" class="vne-team-logo" alt="${tName}" onerror="this.src='https://is.vnecdn.net/objects/teams/42.png?v=1'">
+                  <span class="vne-team-name" title="${tName}">${tName}</span>
+                </div>
+              </td>
+              <td class="col-goals">${goals}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// Update JSON-LD Schema Markup Dynamically from Real Matches
+function updateHubSchemaMarkup(leagueName) {
+  let schemaEl = document.getElementById('schema-sports-event');
+  if (!schemaEl) return;
+
+  const isPL = state.leagueSlug === 'ngoai-hang-anh' || state.leagueId === 39;
+  const pastMatches = state.data?.pastMatches || [];
+
+  // Filter Round 8 matches
+  const round8Matches = pastMatches.filter(m => m.round === 'Regular Season - 8' || m.round === '4th Round Qualifying');
+  const targetMatches = round8Matches.length ? round8Matches : pastMatches.slice(0, 5);
+
+  const subEvents = targetMatches.map(m => ({
+    "@type": "SportsEvent",
+    "name": `${m.home_team.team_name} vs ${m.away_team.team_name}`,
+    "startDate": m.event_date || new Date().toISOString(),
+    "eventStatus": "https://schema.org/EventCompleted",
+    "homeTeam": {
+      "@type": "SportsTeam",
+      "name": m.home_team.team_name,
+      "logo": m.home_team.logo
+    },
+    "awayTeam": {
+      "@type": "SportsTeam",
+      "name": m.away_team.team_name,
+      "logo": m.away_team.logo
+    },
+    "location": {
+      "@type": "Place",
+      "name": m.venue || "England"
+    }
+  }));
+
+  const schemaData = {
+    "@context": "https://schema.org",
+    "@type": "SportsOrganization",
+    "name": `${leagueName} 2025/2026`,
+    "url": window.location.href,
+    "sport": "Soccer",
+    "subEvent": subEvents
+  };
+
+  schemaEl.textContent = JSON.stringify(schemaData, null, 2);
 }
 
 // =========================================================================
