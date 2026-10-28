@@ -289,15 +289,6 @@ function renderTopMatchWidget(matches) {
           <span>${dateFormatted}</span>
           ${isLive ? '<span class="live-dot-pulse" style="width:6px; height:6px;"></span>' : ''}
           ${isFinished ? '<span style="color:#64748b; font-weight:700; font-size:10px;">KT</span>' : ''}
-          ${!isFinished && broadcastChannel ? `
-            <div class="vne-match-channel-pill" title="Trực tiếp: ${broadcastChannel}">
-              <svg class="vne-tv-icon" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect width="20" height="15" x="2" y="7" rx="2" ry="2"/>
-                <polyline points="17 2 12 7 7 2"/>
-              </svg>
-              <span>${broadcastChannel}</span>
-            </div>
-          ` : ''}
         </div>
         
         <!-- Home Team -->
