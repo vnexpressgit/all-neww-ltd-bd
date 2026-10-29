@@ -1,4 +1,18 @@
 
+// Helper: Convert VnExpress news link to local app article URL
+function getArticleUrl(link) {
+  if (!link) return '#';
+  try {
+    const clean = link.split('?')[0].split('#')[0];
+    const match = clean.match(/\/([a-zA-Z0-9_-]+-\d+\.html)$/);
+    if (match) {
+      return '/' + match[1];
+    }
+  } catch (e) {}
+  return link;
+}
+
+
 function getMatchBroadcast(match, leagueId) {
   if (match.broadcast) return match.broadcast;
   if (match.channels && match.channels.length) return match.channels[0];
@@ -349,13 +363,13 @@ function renderNewsSection() {
       heroContainer.innerHTML = `
         <article class="vne-league-hero-card">
           <div class="vne-league-hero-thumb-wrapper">
-            <a href="${hero.link}" target="_blank">
+            <a href="${getArticleUrl(hero.link)}">
               <img src="${hero.thumbnail}" class="vne-league-hero-thumb" alt="${hero.title}" onerror="this.src='https://s1.vnecdn.net/vnexpress/restruct/i/v9525/v2_2019/pc/graphics/placeholder.png'">
             </a>
           </div>
           <div class="vne-league-hero-body">
             <h2 class="vne-league-hero-title">
-              <a href="${hero.link}" target="_blank">${hero.title}</a>
+              <a href="${getArticleUrl(hero.link)}">${hero.title}</a>
             </h2>
             <p class="vne-league-hero-lead">${hero.description}</p>
             <div class="vne-league-hero-footer">
@@ -419,13 +433,13 @@ function renderNewsCardHtml(item) {
   return `
     <article class="vne-league-news-item">
       <div class="vne-league-news-thumb-col">
-        <a href="${item.link}" target="_blank">
+        <a href="${getArticleUrl(item.link)}">
           <img src="${item.thumbnail}" class="vne-league-news-thumb" alt="${item.title}" onerror="this.src='https://s1.vnecdn.net/vnexpress/restruct/i/v9525/v2_2019/pc/graphics/placeholder.png'">
         </a>
       </div>
       <div class="vne-league-news-body-col">
         <h3 class="vne-league-news-heading">
-          <a href="${item.link}" target="_blank">${item.title}</a>
+          <a href="${getArticleUrl(item.link)}">${item.title}</a>
         </h3>
         <p class="vne-league-news-lead">${item.description}</p>
         <div class="vne-league-news-footer">
@@ -1244,7 +1258,7 @@ function renderFixturesNews(leagueName) {
 
   container.innerHTML = newsList.map(item => `
     <article class="vne-results-news-card">
-      <a href="${item.link}" class="vne-news-thumb-wrap" target="_blank" rel="noopener">
+      <a href="${getArticleUrl(item.link)}" class="vne-news-thumb-wrap">
         <img src="${item.thumbnail}" class="vne-news-thumb" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.src='https://s1.vnecdn.net/vnexpress/restruct/i/v9525/v2_2019/pc/graphics/placeholder.png'">
       </a>
       <div class="vne-news-card-content">
@@ -1254,7 +1268,7 @@ function renderFixturesNews(leagueName) {
           <span class="vne-news-time">${item.timeAgo || 'Vừa xong'}</span>
         </div>
         <h3 class="vne-news-card-title">
-          <a href="${item.link}" target="_blank" rel="noopener">${item.title}</a>
+          <a href="${getArticleUrl(item.link)}">${item.title}</a>
         </h3>
         <p class="vne-news-card-desc">${item.description || ''}</p>
       </div>
@@ -1883,7 +1897,7 @@ function renderResultsNews(leagueName) {
 
   container.innerHTML = newsList.map(item => `
     <article class="vne-results-news-card">
-      <a href="${item.link}" class="vne-news-thumb-wrap" target="_blank" rel="noopener">
+      <a href="${getArticleUrl(item.link)}" class="vne-news-thumb-wrap">
         <img src="${item.thumbnail}" class="vne-news-thumb" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.src='https://s1.vnecdn.net/vnexpress/restruct/i/v9525/v2_2019/pc/graphics/placeholder.png'">
       </a>
       <div class="vne-news-card-content">
@@ -1893,7 +1907,7 @@ function renderResultsNews(leagueName) {
           <span class="vne-news-time">${item.timeAgo || 'Vừa xong'}</span>
         </div>
         <h3 class="vne-news-card-title">
-          <a href="${item.link}" target="_blank" rel="noopener">${item.title}</a>
+          <a href="${getArticleUrl(item.link)}">${item.title}</a>
         </h3>
         <p class="vne-news-card-desc">${item.description || ''}</p>
       </div>

@@ -40,6 +40,11 @@ app.get('/tran-dau/:matchSlug/:tab', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'match-detail.html'));
 });
 
+// Article Route matching VnExpress URL template: /slug-cua-bai-id.html
+app.get(/^\/([a-zA-Z0-9_-]+)-(\d+)\.html$/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'article.html'));
+});
+
 // 25 Leagues configuration from prompt
 const LEAGUES = [
   { id: 39, slug: 'ngoai-hang-anh', name: 'Premier League', vnName: 'Ngoại hạng Anh', country: 'Anh', tier: 1, logo: 'https://is.vnecdn.net/objects/leagues/39.png?v=1', color: '#38003c' },
@@ -107,7 +112,8 @@ const cache = {
   standings: {}, // league_id -> { data, timestamp }
   topscorers: {}, // league_id -> { data, timestamp }
   news: { data: [], timestamp: 0 },
-  simulatedLiveMatches: [] // for live mode demo simulation
+  simulatedLiveMatches: [], // for live mode demo simulation
+  articles: {} // article_id -> { data, timestamp }
 };
 
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
@@ -666,6 +672,354 @@ app.get('/api/news', async (req, res) => {
     totalPages: Math.ceil(total / limit) || 1,
     items
   });
+});
+
+// Helper: Format Vietnamese date (Thứ X, ngày DD/MM/YYYY)
+function formatVietnameseDate(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+    const dayName = days[d.getDay()] || 'Hôm nay';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dayName}, ngày ${dd}/${mm}/${yyyy}`;
+  } catch (e) {
+    return 'Hôm nay';
+  }
+}
+
+// Helper: Convert VnExpress news link to local app article URL
+function getArticleUrl(link) {
+  if (!link) return '#';
+  try {
+    const clean = link.split('?')[0].split('#')[0];
+    const match = clean.match(/\/([a-zA-Z0-9_-]+-\d+\.html)$/);
+    if (match) {
+      return '/' + match[1];
+    }
+  } catch (e) {}
+  return link;
+}
+
+// Helper: Format Round Name
+function formatRoundName(rKey) {
+  if (!rKey) return 'Vòng đấu';
+  if (rKey.startsWith('Regular Season - ')) {
+    return 'Vòng ' + rKey.replace('Regular Season - ', '').trim();
+  }
+  if (rKey.startsWith('League Stage - ')) {
+    return 'Lượt ' + rKey.replace('League Stage - ', '').trim();
+  }
+  if (/^Round\s*-?\s*\d+/i.test(rKey)) {
+    return 'Vòng ' + rKey.replace(/^Round\s*-?\s*/i, '').trim();
+  }
+  if (/Round of 16/i.test(rKey)) return 'Vòng 1/8';
+  if (/Quarter-finals/i.test(rKey)) return 'Tứ kết';
+  if (/Semi-finals/i.test(rKey)) return 'Bán kết';
+  if (/Final/i.test(rKey)) return 'Chung kết';
+  return rKey;
+}
+
+// Helper: Build Embedded Match Widget (Image 2 design with no 'Xem tất cả' and direct links)
+function buildEmbeddedWidgetData(fixturesList, league) {
+  const nowTs = Math.floor(Date.now() / 1000);
+  const finishedStatuses = ['FT', 'AET', 'PEN', 'Match Finished'];
+  const list = fixturesList || [];
+
+  const upcoming = list
+    .filter(m => !finishedStatuses.includes(m.status_short) && m.status !== 'Match Finished' && (m.event_timestamp || 0) >= nowTs - 3600 * 4)
+    .sort((a, b) => (a.event_timestamp || 0) - (b.event_timestamp || 0));
+
+  let chosenMatches = [];
+  let dateTitle = '';
+
+  if (upcoming.length >= 4) {
+    const firstDateStr = upcoming[0].event_date.split('T')[0];
+    dateTitle = formatVietnameseDate(upcoming[0].event_date);
+    const sameDate = upcoming.filter(m => m.event_date.startsWith(firstDateStr));
+    if (sameDate.length >= 4) {
+      chosenMatches = sameDate.slice(0, 6);
+    } else {
+      chosenMatches = upcoming.slice(0, 6);
+    }
+  } else {
+    const sorted = [...list].sort((a, b) => (a.event_timestamp || 0) - (b.event_timestamp || 0));
+    let nextIdx = sorted.findIndex(m => (m.event_timestamp || 0) >= nowTs - 3600 * 12);
+    if (nextIdx === -1) nextIdx = Math.max(0, sorted.length - 6);
+    const startIdx = Math.max(0, nextIdx - 3);
+    chosenMatches = sorted.slice(startIdx, startIdx + 6);
+    if (chosenMatches.length > 0) {
+      dateTitle = formatVietnameseDate(chosenMatches[0].event_date);
+    }
+  }
+
+  const matches = chosenMatches.map(m => {
+    const isFinished = finishedStatuses.includes(m.status_short) || m.status === 'Match Finished';
+    let timeOrScore = '';
+    if (isFinished) {
+      timeOrScore = `${m.goals_home_team ?? 0} : ${m.goals_away_team ?? 0}`;
+    } else {
+      const d = new Date(m.event_date);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      timeOrScore = `${hh} : ${mm}`;
+    }
+
+    const homeName = m.home_team?.team_name || 'Home';
+    const awayName = m.away_team?.team_name || 'Away';
+    const matchSlug = `${toSeoSlugServer(homeName)}-vs-${toSeoSlugServer(awayName)}-${m.fixture_id}`;
+
+    return {
+      fixtureId: m.fixture_id,
+      round: formatRoundName(m.round),
+      homeTeam: homeName,
+      homeLogo: m.home_team?.logo || 'https://is.vnecdn.net/objects/teams/40.png?v=1',
+      awayTeam: awayName,
+      awayLogo: m.away_team?.logo || 'https://is.vnecdn.net/objects/teams/40.png?v=1',
+      timeOrScore,
+      isFinished,
+      isLive: ['LIVE', '1H', '2H', 'HT', 'ET', 'P'].includes(m.status_short),
+      matchSlug
+    };
+  });
+
+  const leagueTitleName = league.vnName || league.name;
+
+  return {
+    title: `Lịch đấu – Kết quả ${leagueTitleName}`,
+    dateTitle: dateTitle || 'Hôm nay',
+    matches,
+    resultsUrl: `/giai-dau/${league.slug}/ket-qua`,
+    fixturesUrl: `/giai-dau/${league.slug}/lich-thi-dau`
+  };
+}
+
+// Service: Fetch, Parse & Clean VnExpress Article (No Ads, Authentic Structure)
+async function getArticleDetail(slug, id) {
+  const articleId = String(id);
+  const now = Date.now();
+  if (cache.articles && cache.articles[articleId] && (now - cache.articles[articleId].timestamp < 30 * 60 * 1000)) {
+    return cache.articles[articleId].data;
+  }
+
+  const targetUrl = `https://vnexpress.net/${slug}-${articleId}.html`;
+  let html = '';
+  try {
+    const res = await fetch(targetUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+    });
+    if (res.ok) {
+      html = await res.text();
+    }
+  } catch (err) {
+    console.error('Error fetching VnExpress article:', err.message);
+  }
+
+  let title = '', date = '', lead = '', body = '', author = '', tags = [];
+  let detectedLeague = null;
+
+  if (html) {
+    // 1. Title
+    title = (html.match(/<h1 class="title-detail[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || '').trim();
+    title = title.replace(/<[^>]+>/g, '').trim();
+
+    // 2. Date
+    date = (html.match(/<span class="date"[^>]*>([\s\S]*?)<\/span>/i)?.[1] || '').trim();
+
+    // 3. Lead / Description
+    lead = (html.match(/<p class="description"[^>]*>([\s\S]*?)<\/p>/i)?.[1] || '').trim();
+
+    // 4. Body
+    const bodyMatch = html.match(/<article class="fck_detail[^>]*>([\s\S]*?)<\/article>/i);
+    body = bodyMatch ? bodyMatch[1] : '';
+
+    // 5. Author
+    const authorMatch = body.match(/<p class="Normal"[^>]*style="[^"]*text-align:\s*right[^"]*"[^>]*>([\s\S]*?)<\/p>/i) ||
+                        body.match(/<p class="author"[^>]*>([\s\S]*?)<\/p>/i);
+    if (authorMatch) {
+      author = authorMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
+
+    // 6. Tags
+    const metaTag = html.match(/<meta property="article:tag" content="([^"]+)"/i) || html.match(/<meta name="its_tag" content="([^"]+)"/i);
+    if (metaTag && metaTag[1]) {
+      tags = metaTag[1].split(',').map(t => t.trim()).filter(Boolean);
+    }
+
+    // 7. League Detection via comp id
+    const compIdMatch = html.match(/data-component-competition="(\d+)"/i);
+    if (compIdMatch) {
+      const compId = parseInt(compIdMatch[1]);
+      detectedLeague = LEAGUES.find(l => l.id === compId);
+    }
+  }
+
+  // Fallback to cached football news if fetch was unavailable
+  if (!title) {
+    const cachedItem = cache.news.data.find(n => String(n.id) === articleId || n.link.includes(articleId));
+    if (cachedItem) {
+      title = cachedItem.title;
+      lead = cachedItem.description;
+      date = cachedItem.pubDate || 'Thứ năm, 29/10/2026, 06:39 (GMT+7)';
+      body = `<p class="Normal">${cachedItem.description}</p>`;
+      author = 'VnExpress Thể Thao';
+    } else {
+      title = slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      lead = 'Nội dung chi tiết bài viết thể thao.';
+      date = 'Thứ năm, 29/10/2026, 06:39 (GMT+7)';
+      body = `<p class="Normal">Đang cập nhật nội dung chi tiết bài viết...</p>`;
+    }
+  }
+
+  // Detect League from keywords if not already detected
+  if (!detectedLeague) {
+    const textToSearch = (title + ' ' + lead + ' ' + tags.join(' ')).toLowerCase();
+    if (textToSearch.includes('afc champions league') || textToSearch.includes('c1 châu á')) {
+      detectedLeague = LEAGUES.find(l => l.id === 18) || LEAGUES.find(l => l.slug === 'afc-champions-league-two');
+    } else if (textToSearch.includes('carabao') || textToSearch.includes('cup liên đoàn') || textToSearch.includes('cúp liên đoàn') || textToSearch.includes('league cup')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'carabao-cup');
+    } else if (textToSearch.includes('fa cup')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'fa-cup');
+    } else if (textToSearch.includes('v-league') || textToSearch.includes('vleague') || textToSearch.includes('u17') || textToSearch.includes('cahn') || textToSearch.includes('hà nội fc') || textToSearch.includes('thể công') || textToSearch.includes('nam định')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'v-league');
+    } else if (textToSearch.includes('la liga') || textToSearch.includes('barca') || textToSearch.includes('real madrid') || textToSearch.includes('atletico')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'la-liga');
+    } else if (textToSearch.includes('serie a') || textToSearch.includes('juventus') || textToSearch.includes('inter milan') || textToSearch.includes('ac milan') || textToSearch.includes('as roma')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'serie-a');
+    } else if (textToSearch.includes('bundesliga') || textToSearch.includes('bayern') || textToSearch.includes('dortmund') || textToSearch.includes('leverkusen')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'bundesliga');
+    } else if (textToSearch.includes('ligue 1') || textToSearch.includes('psg') || textToSearch.includes('marseille') || textToSearch.includes('monaco')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'ligue-1');
+    } else if (textToSearch.includes('champions league') || textToSearch.includes('cúp c1') || textToSearch.includes('uefa champions league')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'champions-league');
+    } else if (textToSearch.includes('europa league') || textToSearch.includes('cúp c2')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'europa-league');
+    } else if (textToSearch.includes('copa del rey') || textToSearch.includes('cúp nhà vua')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'copa-del-rey');
+    } else if (textToSearch.includes('saudi') || textToSearch.includes('al-nassr') || textToSearch.includes('al-hilal')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'saudi-pro-league');
+    } else if (textToSearch.includes('mls') || textToSearch.includes('inter miami')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'mls');
+    } else if (textToSearch.includes('premier league') || textToSearch.includes('ngoại hạng anh') || textToSearch.includes('arsenal') || textToSearch.includes('chelsea') || textToSearch.includes('liverpool') || textToSearch.includes('man utd') || textToSearch.includes('man city') || textToSearch.includes('tottenham') || textToSearch.includes('haaland')) {
+      detectedLeague = LEAGUES.find(l => l.slug === 'ngoai-hang-anh');
+    } else {
+      detectedLeague = LEAGUES.find(l => l.slug === 'ngoai-hang-anh') || LEAGUES[0];
+    }
+  }
+
+  // Strict cleaning: Strip ALL advertising, tracking, banners, iframes
+  body = body.replace(/<h1 class="title-detail[\s\S]*?<\/h1>/gi, '');
+  body = body.replace(/<p class="description"[\s\S]*?<\/p>/gi, '');
+  body = body.replace(/<script[\s\S]*?<\/script>/gi, '');
+  body = body.replace(/<style[\s\S]*?<\/style>/gi, '');
+  body = body.replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
+  body = body.replace(/<!--[\s\S]*?-->/g, '');
+  body = body.replace(/<div[^>]*class="[^"]*(box-advertising|banner|banner_ads|ad-container|box-ad|eclick|adv_|beacon_|sponsor)[^"]*"[\s\S]*?<\/div>/gi, '');
+  body = body.replace(/<div[^>]*id="[^"]*(ad_|banner_|adv_|beacon_|google_ads|dfp_)[^"]*"[\s\S]*?<\/div>/gi, '');
+  body = body.replace(/<div class="component widget_soccer"[\s\S]*?<\/div>/gi, '');
+
+  // Convert lazy image attributes (data-src -> src) and remove 1x1 base64 gifs
+  body = body.replace(/<img([^>]+)>/gi, (imgTag, attrs) => {
+    let src = '';
+    const dataSrcMatch = attrs.match(/data-src="([^">]+)"/i);
+    const regularSrcMatch = attrs.match(/src="([^">]+)"/i);
+    if (dataSrcMatch && !dataSrcMatch[1].startsWith('data:')) {
+      src = dataSrcMatch[1];
+    } else if (regularSrcMatch && !regularSrcMatch[1].startsWith('data:')) {
+      src = regularSrcMatch[1];
+    }
+    if (src) {
+      let altMatch = attrs.match(/alt="([^">]*)"/i);
+      let alt = altMatch ? altMatch[1] : '';
+      return `<img src="${src}" alt="${alt}" loading="lazy" class="vne-article-img">`;
+    }
+    return imgTag;
+  });
+
+  // Convert VnExpress article links to local links
+  body = body.replace(/https:\/\/vnexpress\.net\/([a-zA-Z0-9_-]+-\d+\.html)/gi, '/$1');
+
+  // Build the Embedded Match Widget Data (fallback to Ngoại hạng Anh if league has 0 fixtures)
+  let leagueFixtures = await getLeagueFixtures(detectedLeague.id);
+  let widgetLeague = detectedLeague;
+  if (!leagueFixtures || leagueFixtures.length === 0) {
+    const epl = LEAGUES.find(l => l.slug === 'ngoai-hang-anh') || LEAGUES[0];
+    leagueFixtures = await getLeagueFixtures(epl.id);
+    widgetLeague = epl;
+  }
+  const widgetData = buildEmbeddedWidgetData(leagueFixtures, widgetLeague);
+
+  // Top 5 "Xem nhiều" sports news
+  const allNews = await getFootballNews();
+  const mostViewed = allNews.slice(0, 5).map(n => ({
+    title: n.title,
+    link: getArticleUrl(n.link),
+    timeAgo: n.timeAgo,
+    thumbnail: n.thumbnail
+  }));
+
+  // 4 Related news items for "Tin cùng chuyên mục"
+  const relatedNews = allNews.filter(n => String(n.id) !== articleId).slice(0, 4).map(n => ({
+    title: n.title,
+    link: getArticleUrl(n.link),
+    timeAgo: n.timeAgo,
+    thumbnail: n.thumbnail,
+    category: n.category
+  }));
+
+  const result = {
+    id: articleId,
+    slug,
+    title,
+    date,
+    lead,
+    body,
+    author,
+    tags,
+    league: {
+      id: detectedLeague.id,
+      name: detectedLeague.name,
+      vnName: detectedLeague.vnName || detectedLeague.name,
+      slug: detectedLeague.slug,
+      logo: detectedLeague.logo
+    },
+    widget: widgetData,
+    mostViewed,
+    relatedNews
+  };
+
+  if (!cache.articles) cache.articles = {};
+  cache.articles[articleId] = { data: result, timestamp: now };
+  return result;
+}
+
+// API: Article Detail Endpoint
+app.get('/api/article', async (req, res) => {
+  const { slug, id, url } = req.query;
+  let targetSlug = slug;
+  let targetId = id;
+
+  if (url && (!targetSlug || !targetId)) {
+    const match = url.match(/\/([a-zA-Z0-9_-]+)-(\d+)\.html$/);
+    if (match) {
+      targetSlug = match[1];
+      targetId = match[2];
+    }
+  }
+
+  if (!targetSlug || !targetId) {
+    targetSlug = 'liverpool-thang-chelsea-luan-luu-o-cup-lien-doan';
+    targetId = '5138105';
+  }
+
+  try {
+    const article = await getArticleDetail(targetSlug, targetId);
+    res.json(article);
+  } catch (err) {
+    console.error('Error serving article API:', err);
+    res.status(500).json({ error: 'Không thể tải bài viết: ' + err.message });
+  }
 });
 
 // API: Fixtures and Results

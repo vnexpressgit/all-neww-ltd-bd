@@ -1,4 +1,18 @@
 
+// Helper: Convert VnExpress news link to local app article URL
+function getArticleUrl(link) {
+  if (!link) return '#';
+  try {
+    const clean = link.split('?')[0].split('#')[0];
+    const match = clean.match(/\/([a-zA-Z0-9_-]+-\d+\.html)$/);
+    if (match) {
+      return '/' + match[1];
+    }
+  } catch (e) {}
+  return link;
+}
+
+
 function getMatchBroadcast(match, leagueId) {
   if (match.broadcast) return match.broadcast;
   if (match.channels && match.channels.length) return match.channels[0];
@@ -950,7 +964,7 @@ async function loadNews(page = 1) {
     document.getElementById('news-display-range').innerText = `Hiển thị ${startRange} - ${endRange} trên ${data.total} bài viết`;
 
     container.innerHTML = items.map(news => `
-      <a href="${news.link}" target="_blank" rel="noopener noreferrer" class="vne-news-card">
+      <a href="${getArticleUrl(news.link)}" class="vne-news-card">
         <div class="vne-news-thumb-col">
           <img src="${news.thumbnail}" class="vne-news-thumb" alt="${escapeHtml(news.title)}" loading="lazy" onerror="this.src='https://s1.vnecdn.net/vnexpress/restruct/i/v9525/v2_2019/pc/graphics/placeholder.png'">
         </div>
