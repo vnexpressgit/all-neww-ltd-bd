@@ -935,7 +935,8 @@ function renderFixturesDateMenu() {
     return;
   }
 
-  if (!state.selectedFixturesDate) {
+  // Mặc định chọn '3 ngày gần nhất' nếu chưa có ngày nào được chọn hoặc nếu đang ở trong 3 ngày đầu
+  if (!state.selectedFixturesDate || sortedDates.slice(0, 3).includes(state.selectedFixturesDate)) {
     state.selectedFixturesDate = 'upcoming-3';
   }
 
@@ -944,11 +945,14 @@ function renderFixturesDateMenu() {
             class="vne-round-pill ${state.selectedFixturesDate === 'upcoming-3' ? 'active' : ''}" 
             data-date="upcoming-3" 
             onclick="selectFixturesDate('upcoming-3')">
-      3 ngày tới
+      3 ngày gần nhất
     </button>
   `;
 
-  html += sortedDates.map(ymd => {
+  // Menu ngày bên cạnh '3 ngày gần nhất' là ngày thứ 4 gần nhất đi về tương lai có trận đấu (bỏ qua 3 ngày đầu)
+  const remainingDates = sortedDates.slice(3);
+
+  html += remainingDates.map(ymd => {
     const label = formatDatePillLabel(ymd);
     const isActive = ymd === state.selectedFixturesDate;
     return `
@@ -1556,7 +1560,8 @@ function renderHubDateMenu() {
     return;
   }
 
-  if (!state.selectedResultsDate) {
+  // Mặc định chọn '3 ngày gần nhất' nếu chưa có ngày nào được chọn hoặc nếu đang ở trong 3 ngày đầu
+  if (!state.selectedResultsDate || sortedDates.slice(0, 3).includes(state.selectedResultsDate)) {
     state.selectedResultsDate = 'latest-3';
   }
 
@@ -1569,7 +1574,10 @@ function renderHubDateMenu() {
     </button>
   `;
 
-  html += sortedDates.map(ymd => {
+  // Menu ngày bên cạnh '3 ngày gần nhất' là ngày thứ 4 gần nhất trở về quá khứ có trận đấu (bỏ qua 3 ngày đầu)
+  const remainingDates = sortedDates.slice(3);
+
+  html += remainingDates.map(ymd => {
     const label = formatDatePillLabel(ymd);
     const isActive = ymd === state.selectedResultsDate;
     return `
